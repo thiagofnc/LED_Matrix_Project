@@ -64,7 +64,10 @@ enum TestMode {
   MODE_MATRIX_RAIN,
   MODE_FIRE,
   MODE_PLASMA,
-  MODE_TWINKLE
+  MODE_TWINKLE,
+  MODE_SOUNDBAR,
+  MODE_FLUID,
+  MODE_FIREWORKS
 };
 
 TestMode currentMode = MODE_HELP;
@@ -88,6 +91,18 @@ uint8_t rainSpeed[PANEL_RES_X];
 uint8_t rainTick = 0;
 uint8_t fireHeat[PANEL_RES_X][PANEL_RES_Y];
 uint16_t twinklePhase = 0;
+uint8_t soundbarHeights[PANEL_RES_X];
+uint8_t soundbarTargets[PANEL_RES_X];
+uint8_t fluidField[PANEL_RES_Y][PANEL_RES_X];
+uint8_t fluidScratch[PANEL_RES_Y][PANEL_RES_X];
+uint32_t fluidTick = 0;
+const int MAX_FIREWORK_PARTICLES = 48;
+float fwX[MAX_FIREWORK_PARTICLES];
+float fwY[MAX_FIREWORK_PARTICLES];
+float fwVX[MAX_FIREWORK_PARTICLES];
+float fwVY[MAX_FIREWORK_PARTICLES];
+uint8_t fwLife[MAX_FIREWORK_PARTICLES];
+uint8_t fwHue[MAX_FIREWORK_PARTICLES];
 
 struct GlyphDef {
   char c;
@@ -694,6 +709,242 @@ void drawTwinkleFrame(uint32_t t) {
   }
 }
 
+void seedSoundbar() {
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    soundbarHeights[x] = random(PANEL_RES_Y);
+    soundbarTargets[x] = random(PANEL_RES_Y);
+  }
+}
+
+void drawSoundbarFrame(uint32_t t) {
+  matrix->fillScreen(BLACK);
+
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    if ((t / 40 + x) % 5 == 0) {
+      soundbarTargets[x] = random(2, PANEL_RES_Y + 1);
+    }
+
+    if (soundbarHeights[x] < soundbarTargets[x]) {
+      soundbarHeights[x]++;
+    } else if (soundbarHeights[x] > soundbarTargets[x]) {
+      soundbarHeights[x]--;
+    }
+
+    for (int y = 0; y < soundbarHeights[x]; y++) {
+      int drawY = PANEL_RES_Y - 1 - y;
+      uint8_t hue = (uint8_t)((x * 8 + y * 10 + (t / 8)) & 0xFF);
+      uint16_t color = colorWheel(hue);
+      if (y == soundbarHeights[x] - 1) {
+        color = matrix->color565(255, 255, 255);
+      }
+      drawPixelMapped(x, drawY, color);
+    }
+  }
+}
+
+void seedFluid() {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      fluidField[y][x] = 0;
+      fluidScratch[y][x] = 0;
+    }
+  }
+  fluidTick = 0;
+}
+
+void addFluidDroplets() {
+  int drops = 1 + random(3);
+  for (int i = 0; i < drops; i++) {
+    int x = random(PANEL_RES_X);
+    fluidField[0][x] = 220 + random(36);
+    if (x > 0 && random(100) < 40) {
+      fluidField[0][x - 1] = max(fluidField[0][x - 1], (uint8_t)(140 + random(50)));
+    }
+    if (x < PANEL_RES_X - 1 && random(100) < 40) {
+      fluidField[0][x + 1] = max(fluidField[0][x + 1], (uint8_t)(140 + random(50)));
+    }
+  }
+}
+
+void drawFluidFrame(uint32_t t) {
+  fluidTick++;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      fluidScratch[y][x] = 0;
+    }
+  }
+
+  addFluidDroplets();
+
+  for (int y = PANEL_RES_Y - 1; y >= 0; y--) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      uint8_t amount = fluidField[y][x];
+      if (amount < 8) {
+        continue;
+      }
+
+      int remaining = amount;
+      int drift = (((int)(t / 120) + y * 3 + x) & 1) ? -1 : 1;
+      int down = y + 1;
+
+      if (down < PANEL_RES_Y) {
+        int flowDown = min(remaining, 120);
+        fluidScratch[down][x] = min(255, fluidScratch[down][x] + flowDown);
+        remaining -= flowDown;
+      } else {
+        fluidScratch[y][x] = min(255, fluidScratch[y][x] + remaining / 3);
+        remaining = remaining * 2 / 3;
+      }
+
+      int sideA = x + drift;
+      int sideB = x - drift;
+
+      if (remaining > 0 && sideA >= 0 && sideA < PANEL_RES_X) {
+        int flowSide = min(remaining, 70);
+        fluidScratch[y][sideA] = min(255, fluidScratch[y][sideA] + flowSide);
+        remaining -= flowSide;
+      }
+
+      if (remaining > 0 && sideB >= 0 && sideB < PANEL_RES_X) {
+        int flowSide = min(remaining, 45);
+        fluidScratch[y][sideB] = min(255, fluidScratch[y][sideB] + flowSide);
+        remaining -= flowSide;
+      }
+
+      if (remaining > 0) {
+        fluidScratch[y][x] = min(255, fluidScratch[y][x] + remaining);
+      }
+    }
+  }
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      int smoothed = fluidScratch[y][x] * 3;
+      int weight = 3;
+
+      if (x > 0) {
+        smoothed += fluidScratch[y][x - 1];
+        weight++;
+      }
+      if (x < PANEL_RES_X - 1) {
+        smoothed += fluidScratch[y][x + 1];
+        weight++;
+      }
+      if (y > 0) {
+        smoothed += fluidScratch[y - 1][x];
+        weight++;
+      }
+
+      uint8_t amount = smoothed / weight;
+      if (amount > 3) {
+        amount -= 3;
+      }
+      fluidField[y][x] = amount;
+    }
+  }
+
+  matrix->fillScreen(BLACK);
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      uint8_t amount = fluidField[y][x];
+      if (amount < 10) {
+        continue;
+      }
+
+      uint8_t hue = (uint8_t)(150 + ((amount / 3) + y * 4 + (t / 14)) % 90);
+      uint16_t base = colorWheel(hue);
+      uint8_t r = (((base >> 11) & 0x1F) << 3);
+      uint8_t g = (((base >> 5) & 0x3F) << 2);
+      uint8_t b = ((base & 0x1F) << 3);
+
+      uint8_t bright = min(255, amount + 30);
+      r = (uint8_t)((r * bright) / 255);
+      g = (uint8_t)((g * bright) / 255);
+      b = (uint8_t)((b * bright) / 255);
+
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+}
+
+void clearFireworks() {
+  for (int i = 0; i < MAX_FIREWORK_PARTICLES; i++) {
+    fwLife[i] = 0;
+    fwX[i] = 0;
+    fwY[i] = 0;
+    fwVX[i] = 0;
+    fwVY[i] = 0;
+    fwHue[i] = 0;
+  }
+}
+
+void spawnFireworkBurst() {
+  float cx = random(4, PANEL_RES_X - 4);
+  float cy = random(2, PANEL_RES_Y / 2 + 2);
+  uint8_t baseHue = random(256);
+  int particles = 18 + (int)random(12);
+  int totalParticles = particles;
+
+  for (int i = 0; i < MAX_FIREWORK_PARTICLES && particles > 0; i++) {
+    if (fwLife[i] != 0) {
+      continue;
+    }
+
+    float angle = (6.2831853f * particles) / (float)((totalParticles > 0) ? totalParticles : 1);
+    float speed = 0.35f + (random(100) / 100.0f) * 1.3f;
+
+    fwX[i] = cx;
+    fwY[i] = cy;
+    fwVX[i] = cosf(angle + random(100) * 0.01f) * speed;
+    fwVY[i] = sinf(angle + random(100) * 0.01f) * speed;
+    fwLife[i] = 12 + random(14);
+    fwHue[i] = baseHue + random(50);
+    particles--;
+  }
+}
+
+void drawFireworksFrame(uint32_t t) {
+  if (random(100) < 12) {
+    spawnFireworkBurst();
+  }
+
+  matrix->fillScreen(BLACK);
+
+  for (int i = 0; i < MAX_FIREWORK_PARTICLES; i++) {
+    if (fwLife[i] == 0) {
+      continue;
+    }
+
+    fwX[i] += fwVX[i];
+    fwY[i] += fwVY[i];
+    fwVY[i] += 0.05f;
+    fwVX[i] *= 0.99f;
+    fwVY[i] *= 0.99f;
+
+    if (fwLife[i] > 0) {
+      fwLife[i]--;
+    }
+
+    int px = (int)(fwX[i] + 0.5f);
+    int py = (int)(fwY[i] + 0.5f);
+
+    if (px < 0 || px >= PANEL_RES_X || py < 0 || py >= PANEL_RES_Y || fwLife[i] == 0) {
+      fwLife[i] = 0;
+      continue;
+    }
+
+    uint16_t color = colorWheel(fwHue[i] + (uint8_t)(t / 10));
+    drawPixelMapped(px, py, color);
+
+    if (fwLife[i] > 8) {
+      drawPixelMapped(px, py, WHITE);
+    } else if (fwLife[i] > 4 && py + 1 < PANEL_RES_Y) {
+      drawPixelMapped(px, py + 1, matrix->color565(30, 30, 30));
+    }
+  }
+}
+
 void printHelp() {
   Serial.println();
   Serial.println("Calibration commands:");
@@ -714,6 +965,9 @@ void printHelp() {
   Serial.println("  fire         -> run animated fire effect");
   Serial.println("  plasma       -> run colorful plasma effect");
   Serial.println("  twinkle      -> run neon starfield twinkle");
+  Serial.println("  soundbar     -> run rainbow equalizer bars");
+  Serial.println("  fluid        -> run fluid-like rainbow motion");
+  Serial.println("  fireworks    -> run rainbow fireworks");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
   Serial.println("  rchar <c>    -> display one large char on rotated 16x32 view");
   Serial.println("  rchartest <ms> -> cycle through all supported rotated chars");
@@ -958,6 +1212,27 @@ void handleCommand(String input) {
   if (input == "twinkle") {
     currentMode = MODE_TWINKLE;
     Serial.println("Twinkle effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "soundbar") {
+    seedSoundbar();
+    currentMode = MODE_SOUNDBAR;
+    Serial.println("Soundbar effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "fluid") {
+    seedFluid();
+    currentMode = MODE_FLUID;
+    Serial.println("Fluid effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "fireworks") {
+    clearFireworks();
+    currentMode = MODE_FIREWORKS;
+    Serial.println("Fireworks effect started. Send 'stop' to return to command mode.");
     return;
   }
 
@@ -1218,5 +1493,20 @@ void loop() {
   if (currentMode == MODE_TWINKLE) {
     drawTwinkleFrame(millis());
     delay(30);
+  }
+
+  if (currentMode == MODE_SOUNDBAR) {
+    drawSoundbarFrame(millis());
+    delay(45);
+  }
+
+  if (currentMode == MODE_FLUID) {
+    drawFluidFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_FIREWORKS) {
+    drawFireworksFrame(millis());
+    delay(40);
   }
 }
