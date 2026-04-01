@@ -1,5 +1,7 @@
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <ESP32-VirtualMatrixPanel-I2S-DMA.h>
+#include <time.h>
+#include <sys/time.h>
  
 // ================= Panel settings =================
 #define PANEL_RES_X 32
@@ -17,6 +19,7 @@
 // XY mapping. Keep these explicit so they are easy to tune.
 #define PANEL_I2S_SPEED HUB75_I2S_CFG::HZ_10M
 #define PANEL_CLK_PHASE false
+#define PANEL_TIMEZONE "EST5EDT,M3.2.0/2,M11.1.0/2"
  
 // ================= Your exact pin mapping =================
 HUB75_I2S_CFG::i2s_pins _pins = {
@@ -86,6 +89,7 @@ bool lifeNext[PANEL_RES_Y][PANEL_RES_X];
 uint16_t lifeGeneration = 0;
 String textMessage = "HELLO";
 String clockText = "12:34";
+String lastClockText = "";
 char rotatedChar = 'A';
 bool plasmaClockInitialized = false;
 int rainHead[PANEL_RES_X];
@@ -158,6 +162,103 @@ const GlyphDef simpleFont[] = {
 };
 
 const char supportedChars[] = " !-.:0123456789?ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+bool parseBuildTime(tm& outTm) {
+  const char* months = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  char monthStr[4];
+  int day;
+  int year;
+  int hour;
+  int minute;
+  int second;
+
+  if (sscanf(__DATE__, "%3s %d %d", monthStr, &day, &year) != 3) {
+    return false;
+  }
+  if (sscanf(__TIME__, "%d:%d:%d", &hour, &minute, &second) != 3) {
+    return false;
+  }
+
+  char* monthPtr = strstr(months, monthStr);
+  if (monthPtr == nullptr) {
+    return false;
+  }
+
+  memset(&outTm, 0, sizeof(outTm));
+  outTm.tm_year = year - 1900;
+  outTm.tm_mon = (monthPtr - months) / 3;
+  outTm.tm_mday = day;
+  outTm.tm_hour = hour;
+  outTm.tm_min = minute;
+  outTm.tm_sec = second;
+  outTm.tm_isdst = -1;
+  return true;
+}
+
+void initClockTime() {
+  setenv("TZ", PANEL_TIMEZONE, 1);
+  tzset();
+
+  tm buildTm;
+  if (!parseBuildTime(buildTm)) {
+    return;
+  }
+
+  time_t buildEpoch = mktime(&buildTm);
+  if (buildEpoch <= 0) {
+    return;
+  }
+
+  timeval now = { buildEpoch, 0 };
+  settimeofday(&now, nullptr);
+}
+
+bool setClockFromString(const String& value) {
+  int h = 0;
+  int m = 0;
+  int s = 0;
+  int parts = 0;
+
+  if (sscanf(value.c_str(), "%d:%d:%d%n", &h, &m, &s, &parts) >= 2 && parts == value.length()) {
+    // Parsed HH:MM:SS
+  } else {
+    s = 0;
+    if (sscanf(value.c_str(), "%d:%d%n", &h, &m, &parts) < 2 || parts != value.length()) {
+      return false;
+    }
+  }
+
+  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) {
+    return false;
+  }
+
+  time_t nowSecs = time(nullptr);
+  tm localNow;
+  localtime_r(&nowSecs, &localNow);
+  localNow.tm_hour = h;
+  localNow.tm_min = m;
+  localNow.tm_sec = s;
+  localNow.tm_isdst = -1;
+
+  time_t newEpoch = mktime(&localNow);
+  if (newEpoch <= 0) {
+    return false;
+  }
+
+  timeval now = { newEpoch, 0 };
+  settimeofday(&now, nullptr);
+  return true;
+}
+
+String getCurrentClockText() {
+  time_t nowSecs = time(nullptr);
+  tm localNow;
+  localtime_r(&nowSecs, &localNow);
+
+  char buf[6];
+  snprintf(buf, sizeof(buf), "%02d:%02d", localNow.tm_hour, localNow.tm_min);
+  return String(buf);
+}
 
 RemapPoint builtInMapPrediction(int x, int y) {
   int chunk = x / 8;
@@ -713,6 +814,7 @@ void drawTwinkleFrame(uint32_t t) {
 }
 
 void drawPlasmaClockFrame(uint32_t t) {
+  clockText = getCurrentClockText();
   int scale = 1;
   int textWidth = clockText.length() * 6 * scale - 1;
   int startX = (PANEL_RES_X - textWidth) / 2;
@@ -724,7 +826,7 @@ void drawPlasmaClockFrame(uint32_t t) {
   int textBandTop = 0;
   int textBandBottom = 8;
 
-  if (!plasmaClockInitialized) {
+  if (!plasmaClockInitialized || clockText != lastClockText) {
     for (int y = textBandTop; y <= textBandBottom && y < PANEL_RES_Y; y++) {
       for (int x = 0; x < PANEL_RES_X; x++) {
         drawPixelMapped(x, y, BLACK);
@@ -732,6 +834,7 @@ void drawPlasmaClockFrame(uint32_t t) {
     }
     drawMappedText(startX, startY, clockText, WHITE, scale);
     plasmaClockInitialized = true;
+    lastClockText = clockText;
   }
 
   for (int y = textBandBottom + 1; y < PANEL_RES_Y; y++) {
@@ -1007,7 +1110,8 @@ void printHelp() {
   Serial.println("  matrix       -> run green matrix-rain pattern");
   Serial.println("  fire         -> run animated fire effect");
   Serial.println("  plasma       -> run colorful plasma effect");
-  Serial.println("  pclock <hh:mm> -> plasma with a clock overlay");
+  Serial.println("  pclock       -> plasma with the current clock time");
+  Serial.println("  settime <hh:mm[:ss]> -> set the device clock manually");
   Serial.println("  twinkle      -> run neon starfield twinkle");
   Serial.println("  soundbar     -> run rainbow equalizer bars");
   Serial.println("  fluid        -> run fluid-like rainbow motion");
@@ -1079,6 +1183,7 @@ void handleCommand(String input) {
   if (input == "clear") {
     currentMode = MODE_HELP;
     plasmaClockInitialized = false;
+    lastClockText = "";
     matrix->fillScreen(BLACK);
     Serial.println("Panel cleared.");
     return;
@@ -1087,6 +1192,7 @@ void handleCommand(String input) {
   if (input == "stop") {
     currentMode = MODE_HELP;
     plasmaClockInitialized = false;
+    lastClockText = "";
     matrix->fillScreen(BLACK);
     Serial.println("Stopped active mode.");
     return;
@@ -1251,23 +1357,34 @@ void handleCommand(String input) {
 
   if (input == "plasma") {
     plasmaClockInitialized = false;
+    lastClockText = "";
     currentMode = MODE_PLASMA;
     Serial.println("Plasma effect started. Send 'stop' to return to command mode.");
     return;
   }
 
-  if (input.startsWith("pclock ")) {
-    clockText = input.substring(7);
-    clockText.trim();
-    if (clockText.length() == 0) {
-      Serial.println("Use: pclock <hh:mm>");
+  if (input == "pclock") {
+    plasmaClockInitialized = false;
+    lastClockText = "";
+    currentMode = MODE_PLASMA_CLOCK;
+    Serial.print("Plasma clock started at ");
+    Serial.print(getCurrentClockText());
+    Serial.println(". Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input.startsWith("settime ")) {
+    String value = input.substring(8);
+    value.trim();
+    if (!setClockFromString(value)) {
+      Serial.println("Use: settime <hh:mm> or settime <hh:mm:ss>");
       return;
     }
+    clockText = getCurrentClockText();
     plasmaClockInitialized = false;
-    currentMode = MODE_PLASMA_CLOCK;
-    Serial.print("Plasma clock started with time ");
-    Serial.print(clockText);
-    Serial.println(". Send 'stop' to return to command mode.");
+    lastClockText = "";
+    Serial.print("Clock set to ");
+    Serial.println(clockText);
     return;
   }
 
@@ -1459,7 +1576,9 @@ void testText14(uint16_t msDelay) {
 void setup() {
   Serial.begin(115200);
   delay(300);
-
+  initClockTime();
+  clockText = getCurrentClockText();
+ 
   mxconfig.i2sspeed = PANEL_I2S_SPEED;
   mxconfig.clkphase = PANEL_CLK_PHASE;
  
