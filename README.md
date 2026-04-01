@@ -201,6 +201,25 @@ Supported glyph set for the built-in font:
 
 Lowercase letters are converted to uppercase.
 
+### Clock Commands
+
+- `pclock`
+- `settime <hh:mm>`
+- `settime <hh:mm:ss>`
+
+How the clock currently works:
+
+- the sketch uses the ESP32 system clock
+- on startup, the clock is initialized from the sketch build time
+- after that, the ESP32 keeps time internally while it remains powered
+- if the displayed time is wrong, it can be corrected manually with `settime`
+- `pclock` shows the current device time on top of the plasma background
+
+Important limitation:
+
+- this is not yet synchronized from Wi-Fi, NTP, or an RTC module
+- after a reset or new upload, the clock starts from the build/upload time until it is corrected
+
 ### Animation Commands
 
 - `aurora`
@@ -233,6 +252,13 @@ Basic workflow:
 4. Start with diagnostics such as `corners`, `row`, `chunks 0`, or `px 0 0`.
 5. Then try display modes such as `text HELLO`, `rchar A`, `aurora`, `plasma`, or `matrix`.
 6. Use `stop` to leave an animated mode.
+
+Clock example:
+
+1. Upload the sketch.
+2. Open Serial Monitor.
+3. If needed, run `settime 14:37`.
+4. Run `pclock`.
 
 ## Project Goal: LED Panels As Wall Decor
 
