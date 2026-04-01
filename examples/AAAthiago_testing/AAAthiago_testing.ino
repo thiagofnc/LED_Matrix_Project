@@ -139,6 +139,8 @@ const GlyphDef simpleFont[] = {
   {'Z', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F}}
 };
 
+const char supportedChars[] = " !-.:0123456789?ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
 RemapPoint builtInMapPrediction(int x, int y) {
   int chunk = x / 8;
   int off = x % 8;
@@ -457,6 +459,19 @@ void showRotatedSingleChar(char c) {
   drawMappedCharRotated(startX, startY, c, WHITE, scale);
 }
 
+void testRotatedCharSet(uint16_t delayMs) {
+  for (size_t i = 0; i < sizeof(supportedChars) - 1; i++) {
+    char c = supportedChars[i];
+    showRotatedSingleChar(c);
+    Serial.print("RCHAR test: '");
+    Serial.print(c);
+    Serial.println("'");
+    delay(delayMs);
+  }
+
+  matrix->fillScreen(BLACK);
+}
+
 void drawAuroraFrame(uint32_t t) {
   for (int y = 0; y < PANEL_RES_Y; y++) {
     for (int x = 0; x < PANEL_RES_X; x++) {
@@ -701,6 +716,7 @@ void printHelp() {
   Serial.println("  twinkle      -> run neon starfield twinkle");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
   Serial.println("  rchar <c>    -> display one large char on rotated 16x32 view");
+  Serial.println("  rchartest <ms> -> cycle through all supported rotated chars");
   Serial.println("  stop         -> stop animation / stepped mode");
   Serial.println("  next         -> advance current stepped test");
   Serial.println("  clear        -> blank the panel");
@@ -970,6 +986,20 @@ void handleCommand(String input) {
     showRotatedSingleChar(rotatedChar);
     Serial.print("Displayed rotated character: ");
     Serial.println(rotatedChar);
+    return;
+  }
+
+  if (input.startsWith("rchartest ")) {
+    int delayMs = input.substring(10).toInt();
+    if (delayMs < 0) {
+      Serial.println("Invalid rchartest delay.");
+      return;
+    }
+
+    currentMode = MODE_HELP;
+    Serial.printf("Starting rotated character test with %d ms delay.\n", delayMs);
+    testRotatedCharSet((uint16_t)delayMs);
+    Serial.println("Rotated character test complete.");
     return;
   }
 
