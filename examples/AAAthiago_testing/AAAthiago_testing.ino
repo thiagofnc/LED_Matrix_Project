@@ -12,6 +12,11 @@
 #define DMA_PANEL_RES_Y (PANEL_RES_Y / 2)
 #define VIRTUAL_PANEL_ROWS 1
 #define VIRTUAL_PANEL_COLS 1
+
+// These right-edge artifacts may be signal-timing related rather than pure
+// XY mapping. Keep these explicit so they are easy to tune.
+#define PANEL_I2S_SPEED HUB75_I2S_CFG::HZ_10M
+#define PANEL_CLK_PHASE false
  
 // ================= Your exact pin mapping =================
 HUB75_I2S_CFG::i2s_pins _pins = {
@@ -43,6 +48,9 @@ VirtualMatrixPanel *matrix = nullptr;
  
 uint16_t RED, GREEN, BLUE, WHITE, BLACK, YELLOW, CYAN, MAGENTA;
 
+#define ROTATED_RES_X PANEL_RES_Y
+#define ROTATED_RES_Y PANEL_RES_X
+
 enum TestMode {
   MODE_HELP,
   MODE_CORNERS,
@@ -73,6 +81,7 @@ bool lifeCurrent[PANEL_RES_Y][PANEL_RES_X];
 bool lifeNext[PANEL_RES_Y][PANEL_RES_X];
 uint16_t lifeGeneration = 0;
 String textMessage = "HELLO";
+char rotatedChar = 'A';
 int rainHead[PANEL_RES_X];
 uint8_t rainLength[PANEL_RES_X];
 uint8_t rainSpeed[PANEL_RES_X];
@@ -134,6 +143,15 @@ RemapPoint builtInMapPrediction(int x, int y) {
   int chunk = x / 8;
   int off = x % 8;
 
+  // Original derived mapping kept here for reference:
+  // int xBase = (y & 0x04) ? 16 : 0;
+  // int yBase = (y & 0x08) ? 0 : 8;
+  // int row = y & 0x03;
+  // RemapPoint pt;
+  // pt.x = xBase + ((chunk < 2) ? 8 : 0) + ((chunk & 1) ? off : (7 - off));
+  // pt.y = yBase + ((chunk & 1) ? (7 - row) : (3 - row));
+  // return pt;
+
   int xBase = (y & 0x04) ? 16 : 0;
   int yBase = (y & 0x08) ? 0 : 8;
   int row = y & 0x03;
@@ -142,6 +160,12 @@ RemapPoint builtInMapPrediction(int x, int y) {
   pt.x = xBase + ((chunk < 2) ? 8 : 0) + ((chunk & 1) ? off : (7 - off));
   pt.y = yBase + ((chunk & 1) ? (7 - row) : (3 - row));
   return pt;
+}
+
+void swapInverseMapEntries(int ax, int ay, int bx, int by) {
+  RemapPoint temp = inverseMap[ay][ax];
+  inverseMap[ay][ax] = inverseMap[by][bx];
+  inverseMap[by][bx] = temp;
 }
 
 void buildInverseMap() {
@@ -168,6 +192,18 @@ void drawPixelMapped(int x, int y, uint16_t color) {
 
   RemapPoint input = inverseMap[y][x];
   matrix->drawPixel(input.x, input.y, color);
+}
+
+void drawPixelMappedRotated(int x, int y, uint16_t color) {
+  if (x < 0 || x >= ROTATED_RES_X || y < 0 || y >= ROTATED_RES_Y) {
+    return;
+  }
+
+  // Treat the display as a portrait 16x32 surface by rotating logical
+  // coordinates clockwise into the native 32x16 landscape space.
+  int nativeX = y;
+  int nativeY = PANEL_RES_Y - 1 - x;
+  drawPixelMapped(nativeX, nativeY, color);
 }
  
 void showSolidColor(uint16_t color, uint16_t msDelay) {
@@ -233,6 +269,58 @@ void showSplitRowStep(int y) {
     drawPixelMapped(x, y, GREEN);
   }
   Serial.printf("SPLIT logical row y=%d. RED is x=0..15, GREEN is x=16..31.\n", y);
+}
+
+void showChunkRowStep(int y) {
+  matrix->fillScreen(BLACK);
+
+  for (int x = 0; x < 8; x++) {
+    drawPixelMapped(x, y, RED);
+  }
+  for (int x = 8; x < 16; x++) {
+    drawPixelMapped(x, y, GREEN);
+  }
+  for (int x = 16; x < 24; x++) {
+    drawPixelMapped(x, y, BLUE);
+  }
+  for (int x = 24; x < 32; x++) {
+    drawPixelMapped(x, y, WHITE);
+  }
+
+  Serial.printf("CHUNKS logical row y=%d. RED=0..7 GREEN=8..15 BLUE=16..23 WHITE=24..31.\n", y);
+}
+
+void showSingleChunk(int y, int chunkIndex) {
+  if (chunkIndex < 0 || chunkIndex > 3) {
+    return;
+  }
+
+  matrix->fillScreen(BLACK);
+
+  int startX = chunkIndex * 8;
+  uint16_t color = RED;
+  if (chunkIndex == 1) color = GREEN;
+  else if (chunkIndex == 2) color = BLUE;
+  else if (chunkIndex == 3) color = WHITE;
+
+  for (int x = startX; x < startX + 8; x++) {
+    drawPixelMapped(x, y, color);
+  }
+
+  Serial.printf("CHUNK logical row y=%d chunk=%d covering x=%d..%d.\n",
+                y, chunkIndex, startX, startX + 7);
+}
+
+void showSingleChunkPixel(int y, int chunkIndex, int offset) {
+  if (chunkIndex < 0 || chunkIndex > 3 || offset < 0 || offset > 7) {
+    return;
+  }
+
+  matrix->fillScreen(BLACK);
+  int x = chunkIndex * 8 + offset;
+  drawPixelMapped(x, y, MAGENTA);
+  Serial.printf("CHUNKPX logical row y=%d chunk=%d offset=%d logical x=%d.\n",
+                y, chunkIndex, offset, x);
 }
 
 void showSinglePixel(int x, int y) {
@@ -308,6 +396,30 @@ void drawMappedText(int x, int y, const String& text, uint16_t color, uint8_t sc
   }
 }
 
+void drawMappedCharRotated(int x, int y, char c, uint16_t color, uint8_t scale = 1) {
+  const uint8_t* rows = getGlyphRows(c);
+
+  for (int row = 0; row < 7; row++) {
+    for (int col = 0; col < 5; col++) {
+      if (rows[row] & (1 << (4 - col))) {
+        for (int sy = 0; sy < scale; sy++) {
+          for (int sx = 0; sx < scale; sx++) {
+            drawPixelMappedRotated(x + col * scale + sx, y + row * scale + sy, color);
+          }
+        }
+      }
+    }
+  }
+
+  // Manual corrections based on chunk tests. The base mapping gets almost
+  // everything right, but this panel cross-couples a few right-half edge
+  // pixels between neighboring 8x4 regions. Swapping the ownership of these
+  // physical pixels cleans up the visible glitches without disturbing the
+  // rest of the map.
+  swapInverseMapEntries(31, 4, 24, 0);
+  swapInverseMapEntries(31, 12, 16, 8);
+}
+
 void showTextMessage(const String& message) {
   matrix->fillScreen(BLACK);
 
@@ -324,6 +436,25 @@ void showTextMessage(const String& message) {
   }
 
   drawMappedText(startX, startY, message, WHITE, scale);
+}
+
+void showRotatedSingleChar(char c) {
+  matrix->fillScreen(BLACK);
+
+  uint8_t scale = 3;
+  int charWidth = 5 * scale;
+  int charHeight = 7 * scale;
+  int startX = (ROTATED_RES_X - charWidth) / 2;
+  int startY = (ROTATED_RES_Y - charHeight) / 2;
+
+  if (startX < 0) {
+    startX = 0;
+  }
+  if (startY < 0) {
+    startY = 0;
+  }
+
+  drawMappedCharRotated(startX, startY, c, WHITE, scale);
 }
 
 void drawAuroraFrame(uint32_t t) {
@@ -556,6 +687,9 @@ void printHelp() {
   Serial.println("  row          -> step through full rows, Enter advances");
   Serial.println("  col <y>      -> step through columns on row y, Enter advances");
   Serial.println("  split <y>    -> show row y with x=0..15 RED and x=16..31 GREEN");
+  Serial.println("  chunks <y>   -> show row y with 8-pixel color-coded chunks");
+  Serial.println("  chunk <y> <n>   -> show one 8-pixel chunk n=0..3 on row y");
+  Serial.println("  chunkpx <y> <n> <o> -> show one pixel in chunk n at offset o=0..7");
   Serial.println("  px <x> <y>   -> show one logical pixel");
   Serial.println("  sweep <ms>   -> sweep all pixels with delay per pixel in ms");
   Serial.println("  aurora       -> run remapped aurora animation");
@@ -566,6 +700,7 @@ void printHelp() {
   Serial.println("  plasma       -> run colorful plasma effect");
   Serial.println("  twinkle      -> run neon starfield twinkle");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
+  Serial.println("  rchar <c>    -> display one large char on rotated 16x32 view");
   Serial.println("  stop         -> stop animation / stepped mode");
   Serial.println("  next         -> advance current stepped test");
   Serial.println("  clear        -> blank the panel");
@@ -681,6 +816,57 @@ void handleCommand(String input) {
     return;
   }
 
+  if (input.startsWith("chunks ")) {
+    int y = input.substring(7).toInt();
+    if (y < 0 || y >= PANEL_RES_Y) {
+      Serial.println("Invalid row for chunk test. Use 0..15.");
+      return;
+    }
+    currentMode = MODE_HELP;
+    showChunkRowStep(y);
+    return;
+  }
+
+  if (input.startsWith("chunk ")) {
+    int firstSpace = input.indexOf(' ', 6);
+    if (firstSpace == -1) {
+      Serial.println("Use: chunk <row> <chunk>");
+      return;
+    }
+
+    int y = input.substring(6, firstSpace).toInt();
+    int chunkIndex = input.substring(firstSpace + 1).toInt();
+    if (y < 0 || y >= PANEL_RES_Y || chunkIndex < 0 || chunkIndex > 3) {
+      Serial.println("Invalid chunk command. Use row=0..15 and chunk=0..3.");
+      return;
+    }
+
+    currentMode = MODE_HELP;
+    showSingleChunk(y, chunkIndex);
+    return;
+  }
+
+  if (input.startsWith("chunkpx ")) {
+    int firstSpace = input.indexOf(' ', 8);
+    int secondSpace = (firstSpace == -1) ? -1 : input.indexOf(' ', firstSpace + 1);
+    if (firstSpace == -1 || secondSpace == -1) {
+      Serial.println("Use: chunkpx <row> <chunk> <offset>");
+      return;
+    }
+
+    int y = input.substring(8, firstSpace).toInt();
+    int chunkIndex = input.substring(firstSpace + 1, secondSpace).toInt();
+    int offset = input.substring(secondSpace + 1).toInt();
+    if (y < 0 || y >= PANEL_RES_Y || chunkIndex < 0 || chunkIndex > 3 || offset < 0 || offset > 7) {
+      Serial.println("Invalid chunkpx command. Use row=0..15 chunk=0..3 offset=0..7.");
+      return;
+    }
+
+    currentMode = MODE_HELP;
+    showSingleChunkPixel(y, chunkIndex, offset);
+    return;
+  }
+
   if (input.startsWith("sweep ")) {
     int delayMs = input.substring(6).toInt();
     if (delayMs < 0) {
@@ -768,6 +954,22 @@ void handleCommand(String input) {
     showTextMessage(textMessage);
     Serial.print("Displayed text: ");
     Serial.println(textMessage);
+    return;
+  }
+
+  if (input.startsWith("rchar ")) {
+    String value = input.substring(6);
+    value.trim();
+    if (value.length() == 0) {
+      Serial.println("Use: rchar <character>");
+      return;
+    }
+
+    rotatedChar = value[0];
+    currentMode = MODE_HELP;
+    showRotatedSingleChar(rotatedChar);
+    Serial.print("Displayed rotated character: ");
+    Serial.println(rotatedChar);
     return;
   }
 
@@ -890,6 +1092,9 @@ void testText14(uint16_t msDelay) {
 void setup() {
   Serial.begin(115200);
   delay(300);
+
+  mxconfig.i2sspeed = PANEL_I2S_SPEED;
+  mxconfig.clkphase = PANEL_CLK_PHASE;
  
   dma_display = new MatrixPanel_I2S_DMA(mxconfig);
   if (!dma_display->begin()) {
