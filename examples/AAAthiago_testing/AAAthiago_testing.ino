@@ -67,7 +67,8 @@ enum TestMode {
   MODE_TWINKLE,
   MODE_SOUNDBAR,
   MODE_FLUID,
-  MODE_FIREWORKS
+  MODE_FIREWORKS,
+  MODE_PLASMA_CLOCK
 };
 
 TestMode currentMode = MODE_HELP;
@@ -84,6 +85,7 @@ bool lifeCurrent[PANEL_RES_Y][PANEL_RES_X];
 bool lifeNext[PANEL_RES_Y][PANEL_RES_X];
 uint16_t lifeGeneration = 0;
 String textMessage = "HELLO";
+String clockText = "12:34";
 char rotatedChar = 'A';
 int rainHead[PANEL_RES_X];
 uint8_t rainLength[PANEL_RES_X];
@@ -709,6 +711,28 @@ void drawTwinkleFrame(uint32_t t) {
   }
 }
 
+void drawPlasmaClockFrame(uint32_t t) {
+  drawPlasmaFrame(t);
+
+  int scale = 1;
+  int textWidth = clockText.length() * 6 * scale - 1;
+  int startX = (PANEL_RES_X - textWidth) / 2;
+  if (startX < 0) {
+    startX = 0;
+  }
+
+  int startY = 1;
+
+  // Darken a small strip behind the text for contrast.
+  for (int y = startY; y < startY + 8 && y < PANEL_RES_Y; y++) {
+    for (int x = max(0, startX - 1); x < min(PANEL_RES_X, startX + textWidth + 2); x++) {
+      drawPixelMapped(x, y, matrix->color565(0, 0, 0));
+    }
+  }
+
+  drawMappedText(startX, startY, clockText, WHITE, scale);
+}
+
 void seedSoundbar() {
   for (int x = 0; x < PANEL_RES_X; x++) {
     soundbarHeights[x] = random(PANEL_RES_Y);
@@ -964,6 +988,7 @@ void printHelp() {
   Serial.println("  matrix       -> run green matrix-rain pattern");
   Serial.println("  fire         -> run animated fire effect");
   Serial.println("  plasma       -> run colorful plasma effect");
+  Serial.println("  pclock <hh:mm> -> plasma with a clock overlay");
   Serial.println("  twinkle      -> run neon starfield twinkle");
   Serial.println("  soundbar     -> run rainbow equalizer bars");
   Serial.println("  fluid        -> run fluid-like rainbow motion");
@@ -1206,6 +1231,20 @@ void handleCommand(String input) {
   if (input == "plasma") {
     currentMode = MODE_PLASMA;
     Serial.println("Plasma effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input.startsWith("pclock ")) {
+    clockText = input.substring(7);
+    clockText.trim();
+    if (clockText.length() == 0) {
+      Serial.println("Use: pclock <hh:mm>");
+      return;
+    }
+    currentMode = MODE_PLASMA_CLOCK;
+    Serial.print("Plasma clock started with time ");
+    Serial.print(clockText);
+    Serial.println(". Send 'stop' to return to command mode.");
     return;
   }
 
@@ -1487,6 +1526,11 @@ void loop() {
 
   if (currentMode == MODE_PLASMA) {
     drawPlasmaFrame(millis());
+    delay(20);
+  }
+
+  if (currentMode == MODE_PLASMA_CLOCK) {
+    drawPlasmaClockFrame(millis());
     delay(20);
   }
 
