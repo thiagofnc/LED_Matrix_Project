@@ -87,6 +87,7 @@ uint16_t lifeGeneration = 0;
 String textMessage = "HELLO";
 String clockText = "12:34";
 char rotatedChar = 'A';
+bool plasmaClockInitialized = false;
 int rainHead[PANEL_RES_X];
 uint8_t rainLength[PANEL_RES_X];
 uint8_t rainSpeed[PANEL_RES_X];
@@ -712,8 +713,6 @@ void drawTwinkleFrame(uint32_t t) {
 }
 
 void drawPlasmaClockFrame(uint32_t t) {
-  drawPlasmaFrame(t);
-
   int scale = 1;
   int textWidth = clockText.length() * 6 * scale - 1;
   int startX = (PANEL_RES_X - textWidth) / 2;
@@ -722,15 +721,35 @@ void drawPlasmaClockFrame(uint32_t t) {
   }
 
   int startY = 1;
+  int textBandTop = 0;
+  int textBandBottom = 8;
 
-  // Darken a small strip behind the text for contrast.
-  for (int y = startY; y < startY + 8 && y < PANEL_RES_Y; y++) {
-    for (int x = max(0, startX - 1); x < min(PANEL_RES_X, startX + textWidth + 2); x++) {
-      drawPixelMapped(x, y, matrix->color565(0, 0, 0));
+  if (!plasmaClockInitialized) {
+    for (int y = textBandTop; y <= textBandBottom && y < PANEL_RES_Y; y++) {
+      for (int x = 0; x < PANEL_RES_X; x++) {
+        drawPixelMapped(x, y, BLACK);
+      }
     }
+    drawMappedText(startX, startY, clockText, WHITE, scale);
+    plasmaClockInitialized = true;
   }
 
-  drawMappedText(startX, startY, clockText, WHITE, scale);
+  for (int y = textBandBottom + 1; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float cx = x - (PANEL_RES_X / 2.0f);
+      float cy = y - (PANEL_RES_Y / 2.0f);
+      float dist = sqrtf(cx * cx + cy * cy);
+
+      float v =
+        sinf(dist * 0.55f - t * 0.0040f) +
+        sinf(x * 0.45f + t * 0.0030f) +
+        cosf(y * 0.60f - t * 0.0022f) +
+        sinf((x + y) * 0.25f + t * 0.0018f);
+
+      uint8_t hue = (uint8_t)(128 + 40 * v);
+      drawPixelMapped(x, y, colorWheel(hue));
+    }
+  }
 }
 
 void seedSoundbar() {
@@ -1059,6 +1078,7 @@ void handleCommand(String input) {
 
   if (input == "clear") {
     currentMode = MODE_HELP;
+    plasmaClockInitialized = false;
     matrix->fillScreen(BLACK);
     Serial.println("Panel cleared.");
     return;
@@ -1066,6 +1086,7 @@ void handleCommand(String input) {
 
   if (input == "stop") {
     currentMode = MODE_HELP;
+    plasmaClockInitialized = false;
     matrix->fillScreen(BLACK);
     Serial.println("Stopped active mode.");
     return;
@@ -1229,6 +1250,7 @@ void handleCommand(String input) {
   }
 
   if (input == "plasma") {
+    plasmaClockInitialized = false;
     currentMode = MODE_PLASMA;
     Serial.println("Plasma effect started. Send 'stop' to return to command mode.");
     return;
@@ -1241,6 +1263,7 @@ void handleCommand(String input) {
       Serial.println("Use: pclock <hh:mm>");
       return;
     }
+    plasmaClockInitialized = false;
     currentMode = MODE_PLASMA_CLOCK;
     Serial.print("Plasma clock started with time ");
     Serial.print(clockText);
