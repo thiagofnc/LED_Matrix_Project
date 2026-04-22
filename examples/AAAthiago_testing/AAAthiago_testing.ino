@@ -71,7 +71,8 @@ enum TestMode {
   MODE_SOUNDBAR,
   MODE_FLUID,
   MODE_FIREWORKS,
-  MODE_PLASMA_CLOCK
+  MODE_PLASMA_CLOCK,
+  MODE_SUPERNOVA
 };
 
 TestMode currentMode = MODE_HELP;
@@ -110,6 +111,27 @@ float fwVX[MAX_FIREWORK_PARTICLES];
 float fwVY[MAX_FIREWORK_PARTICLES];
 uint8_t fwLife[MAX_FIREWORK_PARTICLES];
 uint8_t fwHue[MAX_FIREWORK_PARTICLES];
+const int MAX_SUPERNOVA_PARTICLES = 72;
+float snX[MAX_SUPERNOVA_PARTICLES];
+float snY[MAX_SUPERNOVA_PARTICLES];
+float snPrevX[MAX_SUPERNOVA_PARTICLES];
+float snPrevY[MAX_SUPERNOVA_PARTICLES];
+float snVX[MAX_SUPERNOVA_PARTICLES];
+float snVY[MAX_SUPERNOVA_PARTICLES];
+uint8_t snLife[MAX_SUPERNOVA_PARTICLES];
+uint8_t snMaxLife[MAX_SUPERNOVA_PARTICLES];
+uint8_t snHue[MAX_SUPERNOVA_PARTICLES];
+bool snRocketActive = false;
+float snRocketX = 0.0f;
+float snRocketY = 0.0f;
+float snRocketVX = 0.0f;
+float snRocketVY = 0.0f;
+uint8_t snRocketHue = 0;
+uint8_t snRocketFuse = 0;
+float snShockwaveX = 0.0f;
+float snShockwaveY = 0.0f;
+float snShockwaveRadius = 0.0f;
+uint8_t snShockwaveLife = 0;
 
 struct GlyphDef {
   char c;
@@ -1091,6 +1113,193 @@ void drawFireworksFrame(uint32_t t) {
   }
 }
 
+void clearSupernova() {
+  snRocketActive = false;
+  snShockwaveLife = 0;
+  snShockwaveRadius = 0.0f;
+
+  for (int i = 0; i < MAX_SUPERNOVA_PARTICLES; i++) {
+    snLife[i] = 0;
+    snMaxLife[i] = 0;
+    snHue[i] = 0;
+    snX[i] = 0.0f;
+    snY[i] = 0.0f;
+    snPrevX[i] = 0.0f;
+    snPrevY[i] = 0.0f;
+    snVX[i] = 0.0f;
+    snVY[i] = 0.0f;
+  }
+}
+
+void launchSupernovaRocket() {
+  snRocketActive = true;
+  snRocketX = random(4, PANEL_RES_X - 4);
+  snRocketY = PANEL_RES_Y - 1;
+  snRocketVX = (random(100) / 100.0f - 0.5f) * 0.30f;
+  snRocketVY = -(1.15f + (random(100) / 100.0f) * 0.55f);
+  snRocketHue = random(256);
+  snRocketFuse = 8 + random(7);
+}
+
+void spawnSupernovaBurst(float cx, float cy, uint8_t baseHue) {
+  snShockwaveX = cx;
+  snShockwaveY = cy;
+  snShockwaveRadius = 0.0f;
+  snShockwaveLife = 9;
+
+  for (int i = 0; i < MAX_SUPERNOVA_PARTICLES; i++) {
+    if (snLife[i] != 0) {
+      continue;
+    }
+
+    float ratio = (float)i / (float)MAX_SUPERNOVA_PARTICLES;
+    float angle = ratio * 6.2831853f;
+    float ringBias = (i % 3 == 0) ? 1.45f : ((i % 3 == 1) ? 0.95f : 0.55f);
+    float speed = ringBias + (random(100) / 100.0f) * 0.55f;
+
+    snX[i] = cx;
+    snY[i] = cy;
+    snPrevX[i] = cx;
+    snPrevY[i] = cy;
+    snVX[i] = cosf(angle) * speed;
+    snVY[i] = sinf(angle) * speed - 0.12f;
+    snMaxLife[i] = 10 + random(10);
+    snLife[i] = snMaxLife[i];
+    snHue[i] = baseHue + (uint8_t)(ratio * 70.0f) + random(18);
+  }
+}
+
+void drawSupernovaFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float cx = x - (PANEL_RES_X / 2.0f);
+      float cy = y - (PANEL_RES_Y / 2.0f);
+      float dist = sqrtf(cx * cx + cy * cy);
+
+      float waveA = sinf(dist * 0.72f - t * 0.0050f);
+      float waveB = sinf((x * 0.48f) + (t * 0.0014f));
+      float waveC = cosf((y * 0.85f) - (t * 0.0026f));
+      float nebula = (waveA * 0.55f) + (waveB * 0.25f) + (waveC * 0.20f);
+
+      uint8_t r = (uint8_t)(8 + 16 * (0.5f + 0.5f * waveB));
+      uint8_t g = (uint8_t)(4 + 24 * (0.5f + 0.5f * waveC));
+      uint8_t b = (uint8_t)(16 + 70 * (0.5f + 0.5f * nebula));
+
+      if ((((x * 11) + (y * 17) + (t / 40)) & 0x1F) == 0) {
+        r = min(255, r + 18);
+        g = min(255, g + 18);
+        b = min(255, b + 40);
+      }
+
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+
+  if (!snRocketActive && random(100) < 18) {
+    launchSupernovaRocket();
+  }
+
+  if (snRocketActive) {
+    float prevX = snRocketX;
+    float prevY = snRocketY;
+
+    snRocketX += snRocketVX;
+    snRocketY += snRocketVY;
+    snRocketVY += 0.02f;
+
+    if (snRocketFuse > 0) {
+      snRocketFuse--;
+    }
+
+    int tailX = (int)(prevX + 0.5f);
+    int tailY = (int)(prevY + 0.5f);
+    int rocketX = (int)(snRocketX + 0.5f);
+    int rocketY = (int)(snRocketY + 0.5f);
+
+    if (tailX >= 0 && tailX < PANEL_RES_X && tailY >= 0 && tailY < PANEL_RES_Y) {
+      drawPixelMapped(tailX, tailY, matrix->color565(80, 80, 120));
+    }
+    if (rocketX >= 0 && rocketX < PANEL_RES_X && rocketY >= 0 && rocketY < PANEL_RES_Y) {
+      drawPixelMapped(rocketX, rocketY, WHITE);
+      if (rocketY + 1 < PANEL_RES_Y) {
+        drawPixelMapped(rocketX, rocketY + 1, matrix->color565(255, 120, 40));
+      }
+    }
+
+    if (snRocketFuse == 0 || snRocketY < 4) {
+      spawnSupernovaBurst(snRocketX, snRocketY, snRocketHue);
+      snRocketActive = false;
+    }
+  }
+
+  if (snShockwaveLife > 0) {
+    float radius = snShockwaveRadius;
+    for (int y = 0; y < PANEL_RES_Y; y++) {
+      for (int x = 0; x < PANEL_RES_X; x++) {
+        float dx = x - snShockwaveX;
+        float dy = y - snShockwaveY;
+        float dist = sqrtf(dx * dx + dy * dy);
+        if (fabsf(dist - radius) < 0.85f) {
+          uint8_t glow = 120 + snShockwaveLife * 12;
+          drawPixelMapped(x, y, matrix->color565(glow, glow, 255));
+        }
+      }
+    }
+
+    snShockwaveRadius += 1.15f;
+    snShockwaveLife--;
+  }
+
+  for (int i = 0; i < MAX_SUPERNOVA_PARTICLES; i++) {
+    if (snLife[i] == 0) {
+      continue;
+    }
+
+    snPrevX[i] = snX[i];
+    snPrevY[i] = snY[i];
+    snX[i] += snVX[i];
+    snY[i] += snVY[i];
+    snVX[i] *= 0.985f;
+    snVY[i] *= 0.985f;
+    snVY[i] += 0.035f;
+
+    int tailX = (int)(snPrevX[i] + 0.5f);
+    int tailY = (int)(snPrevY[i] + 0.5f);
+    int px = (int)(snX[i] + 0.5f);
+    int py = (int)(snY[i] + 0.5f);
+
+    if (px < 0 || px >= PANEL_RES_X || py < 0 || py >= PANEL_RES_Y) {
+      snLife[i] = 0;
+      continue;
+    }
+
+    int fadeDenominator = (snMaxLife[i] > 0) ? snMaxLife[i] : 1;
+    uint8_t fade = (uint8_t)((snLife[i] * 255) / fadeDenominator);
+    uint16_t base = colorWheel(snHue[i] + (uint8_t)(t / 18));
+    uint8_t r = (((base >> 11) & 0x1F) << 3);
+    uint8_t g = (((base >> 5) & 0x3F) << 2);
+    uint8_t b = ((base & 0x1F) << 3);
+
+    uint8_t coreR = min(255, (r * fade) / 160 + 35);
+    uint8_t coreG = min(255, (g * fade) / 160 + 35);
+    uint8_t coreB = min(255, (b * fade) / 160 + 50);
+    uint8_t trailR = max(8, (int)(r * fade) / 510);
+    uint8_t trailG = max(8, (int)(g * fade) / 510);
+    uint8_t trailB = max(10, (int)(b * fade) / 420);
+
+    if (tailX >= 0 && tailX < PANEL_RES_X && tailY >= 0 && tailY < PANEL_RES_Y) {
+      drawPixelMapped(tailX, tailY, matrix->color565(trailR, trailG, trailB));
+    }
+
+    drawPixelMapped(px, py, matrix->color565(coreR, coreG, coreB));
+    if (snLife[i] > (snMaxLife[i] / 2) && px + 1 < PANEL_RES_X) {
+      drawPixelMapped(px + 1, py, matrix->color565(trailR, trailG, trailB));
+    }
+
+    snLife[i]--;
+  }
+}
+
 void printHelp() {
   Serial.println();
   Serial.println("Calibration commands:");
@@ -1116,6 +1325,7 @@ void printHelp() {
   Serial.println("  soundbar     -> run rainbow equalizer bars");
   Serial.println("  fluid        -> run fluid-like rainbow motion");
   Serial.println("  fireworks    -> run rainbow fireworks");
+  Serial.println("  supernova    -> run the cinematic plasma + fireworks showpiece");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
   Serial.println("  rchar <c>    -> display one large char on rotated 16x32 view");
   Serial.println("  rchartest <ms> -> cycle through all supported rotated chars");
@@ -1415,6 +1625,13 @@ void handleCommand(String input) {
     return;
   }
 
+  if (input == "supernova") {
+    clearSupernova();
+    currentMode = MODE_SUPERNOVA;
+    Serial.println("Supernova effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
   if (input.startsWith("text ")) {
     textMessage = input.substring(5);
     if (textMessage.length() == 0) {
@@ -1694,5 +1911,10 @@ void loop() {
   if (currentMode == MODE_FIREWORKS) {
     drawFireworksFrame(millis());
     delay(40);
+  }
+
+  if (currentMode == MODE_SUPERNOVA) {
+    drawSupernovaFrame(millis());
+    delay(35);
   }
 }

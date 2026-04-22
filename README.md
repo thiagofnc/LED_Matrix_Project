@@ -229,6 +229,7 @@ Important limitation:
 - `fire`
 - `plasma`
 - `twinkle`
+- `supernova`
 
 What they do:
 
@@ -239,6 +240,7 @@ What they do:
 - `fire` runs an animated flame effect
 - `plasma` runs a colorful plasma effect
 - `twinkle` runs a starfield-style sparkle effect
+- `supernova` runs a cinematic plasma-sky fireworks showpiece
 
 All of these custom effects draw through `drawPixelMapped()`.
 
@@ -250,7 +252,7 @@ Basic workflow:
 2. Upload it to the ESP32.
 3. Open Serial Monitor at `115200`.
 4. Start with diagnostics such as `corners`, `row`, `chunks 0`, or `px 0 0`.
-5. Then try display modes such as `text HELLO`, `rchar A`, `aurora`, `plasma`, or `matrix`.
+5. Then try display modes such as `text HELLO`, `rchar A`, `supernova`, `plasma`, or `matrix`.
 6. Use `stop` to leave an animated mode.
 
 Clock example:
