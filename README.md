@@ -230,6 +230,34 @@ Important limitation:
 - `plasma`
 - `twinkle`
 - `supernova`
+- `vortex`
+- `lava`
+- `meteor`
+- `storm`
+- `galaxy`
+- `catrun`
+- `squareburst`
+- `smoke`
+- `blobs`
+- `windfire`
+- `ripples`
+- `circuit`
+- `radar`
+- `stylerain`
+- `neural`
+- `tunnel`
+- `cube`
+- `kaleido`
+- `spiral`
+- `interfere`
+- `tessellate`
+- `beatburst`
+- `sunrise`
+- `pacman`
+- `sphere`
+- `parallax`
+- `moire`
+- `morph`
 
 What they do:
 
@@ -241,6 +269,34 @@ What they do:
 - `plasma` runs a colorful plasma effect
 - `twinkle` runs a starfield-style sparkle effect
 - `supernova` runs a cinematic plasma-sky fireworks showpiece
+- `vortex` runs a neon spiral tunnel effect
+- `lava` runs a molten lava field effect
+- `meteor` runs an upgraded comet-storm sky with impacts
+- `storm` runs an electric storm with lightning
+- `galaxy` runs a colorful bright spiral galaxy effect
+- `catrun` runs a looping cat animation from left to right
+- `squareburst` runs colorful squares that pop and explode
+- `smoke` runs color smoke / ink in water
+- `blobs` runs lava-lamp blobs that merge and split
+- `windfire` runs a windy fire effect
+- `ripples` runs water ripples from a moving point
+- `circuit` runs an energy pulse through circuits
+- `radar` runs a radar sweep with glowing targets
+- `stylerain` runs stylized digital rain
+- `neural` runs neural-network light paths firing across nodes
+- `tunnel` runs an infinite tunnel zoom
+- `cube` runs a rotating wireframe cube
+- `kaleido` runs kaleidoscope symmetry
+- `spiral` runs a spiral vortex
+- `interfere` runs wave interference patterns
+- `tessellate` runs tessellations that shift and morph
+- `beatburst` runs particle explosions on beats
+- `sunrise` runs a sunrise gradient over silhouettes
+- `pacman` runs a Pac-Man style chase loop
+- `sphere` runs a fake 3D sphere made of particles
+- `parallax` runs a parallax starfield
+- `moire` runs moire-like shifting lines
+- `morph` runs morphing one symbol into another
 
 All of these custom effects draw through `drawPixelMapped()`.
 
@@ -252,7 +308,7 @@ Basic workflow:
 2. Upload it to the ESP32.
 3. Open Serial Monitor at `115200`.
 4. Start with diagnostics such as `corners`, `row`, `chunks 0`, or `px 0 0`.
-5. Then try display modes such as `text HELLO`, `rchar A`, `supernova`, `plasma`, or `matrix`.
+5. Then try display modes such as `supernova`, `galaxy`, `squareburst`, `meteor`, `catrun`, or `storm`.
 6. Use `stop` to leave an animated mode.
 
 Clock example:

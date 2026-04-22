@@ -72,7 +72,35 @@ enum TestMode {
   MODE_FLUID,
   MODE_FIREWORKS,
   MODE_PLASMA_CLOCK,
-  MODE_SUPERNOVA
+  MODE_SUPERNOVA,
+  MODE_VORTEX,
+  MODE_LAVA,
+  MODE_METEOR,
+  MODE_STORM,
+  MODE_GALAXY,
+  MODE_CATRUN,
+  MODE_SQUAREBURST,
+  MODE_SMOKE,
+  MODE_BLOBS,
+  MODE_WINDFIRE,
+  MODE_RIPPLES,
+  MODE_CIRCUIT,
+  MODE_RADAR,
+  MODE_STYLERAIN,
+  MODE_NEURAL,
+  MODE_TUNNEL,
+  MODE_CUBE,
+  MODE_KALEIDO,
+  MODE_SPIRAL,
+  MODE_INTERFERENCE,
+  MODE_TESSELLATE,
+  MODE_BEATBURST,
+  MODE_SUNRISE,
+  MODE_PACMAN,
+  MODE_SPHERE,
+  MODE_PARALLAX,
+  MODE_MOIRE,
+  MODE_MORPH
 };
 
 TestMode currentMode = MODE_HELP;
@@ -132,6 +160,72 @@ float snShockwaveX = 0.0f;
 float snShockwaveY = 0.0f;
 float snShockwaveRadius = 0.0f;
 uint8_t snShockwaveLife = 0;
+const int MAX_METEORS = 16;
+const int MAX_METEOR_IMPACTS = 6;
+float meteorX[MAX_METEORS];
+float meteorY[MAX_METEORS];
+float meteorVX[MAX_METEORS];
+float meteorVY[MAX_METEORS];
+uint8_t meteorHue[MAX_METEORS];
+uint8_t meteorLength[MAX_METEORS];
+float meteorImpactX[MAX_METEOR_IMPACTS];
+float meteorImpactY[MAX_METEOR_IMPACTS];
+float meteorImpactRadius[MAX_METEOR_IMPACTS];
+uint8_t meteorImpactLife[MAX_METEOR_IMPACTS];
+uint8_t stormBoltMask[PANEL_RES_Y];
+uint8_t stormBoltLife = 0;
+uint8_t stormBoltHue = 0;
+int catRunOffsetX = -12;
+uint8_t catRunFrame = 0;
+const int MAX_SQUARE_BURSTS = 10;
+float squareBurstX[MAX_SQUARE_BURSTS];
+float squareBurstY[MAX_SQUARE_BURSTS];
+float squareBurstRadius[MAX_SQUARE_BURSTS];
+uint8_t squareBurstLife[MAX_SQUARE_BURSTS];
+uint8_t squareBurstHue[MAX_SQUARE_BURSTS];
+
+const char catFrames[4][8][13] = {
+  {
+    "..OO....OO..",
+    ".OOOOOOOOOO.",
+    "OOOWOOOOWOOO",
+    "OOOOOOOOOOOO",
+    ".OOOOPOOOOO.",
+    "..OO....OO..",
+    ".O..O..O..O.",
+    "O....OO....O"
+  },
+  {
+    "..OO....OO..",
+    ".OOOOOOOOOO.",
+    "OOOWOOOOWOOO",
+    "OOOOOOOOOOOO",
+    ".OOOOPOOOOO.",
+    "...OO..OO...",
+    ".OO..OO..OO.",
+    "O..........O"
+  },
+  {
+    "..OO....OO..",
+    ".OOOOOOOOOO.",
+    "OOOWOOOOWOOO",
+    "OOOOOOOOOOOO",
+    ".OOOOPOOOOO.",
+    "..OO....OO..",
+    "OO...OO...OO",
+    "...OO..OO..."
+  },
+  {
+    "..OO....OO..",
+    ".OOOOOOOOOO.",
+    "OOOWOOOOWOOO",
+    "OOOOOOOOOOOO",
+    ".OOOOPOOOOO.",
+    "...OO..OO...",
+    "..O.OOOO.O..",
+    ".O........O."
+  }
+};
 
 struct GlyphDef {
   char c;
@@ -611,6 +705,99 @@ void testRotatedCharSet(uint16_t delayMs) {
   }
 
   matrix->fillScreen(BLACK);
+}
+
+uint16_t scaleColor565(uint16_t color, uint8_t brightness) {
+  uint8_t r = (((color >> 11) & 0x1F) << 3);
+  uint8_t g = (((color >> 5) & 0x3F) << 2);
+  uint8_t b = ((color & 0x1F) << 3);
+
+  r = (uint8_t)((r * brightness) / 255);
+  g = (uint8_t)((g * brightness) / 255);
+  b = (uint8_t)((b * brightness) / 255);
+  return matrix->color565(r, g, b);
+}
+
+void drawSoftGlow(int cx, int cy, float radius, uint16_t color, uint8_t brightness) {
+  if (radius <= 0.0f || brightness == 0) {
+    return;
+  }
+
+  int minX = max(0, (int)(cx - radius - 1));
+  int maxX = min(PANEL_RES_X - 1, (int)(cx + radius + 1));
+  int minY = max(0, (int)(cy - radius - 1));
+  int maxY = min(PANEL_RES_Y - 1, (int)(cy + radius + 1));
+
+  for (int y = minY; y <= maxY; y++) {
+    for (int x = minX; x <= maxX; x++) {
+      float dx = x - cx;
+      float dy = y - cy;
+      float dist = sqrtf(dx * dx + dy * dy);
+      if (dist > radius) {
+        continue;
+      }
+
+      float falloff = 1.0f - (dist / radius);
+      uint8_t localBrightness = (uint8_t)(brightness * falloff);
+      if (localBrightness < 12) {
+        continue;
+      }
+      drawPixelMapped(x, y, scaleColor565(color, localBrightness));
+    }
+  }
+}
+
+void drawLineMapped(int x0, int y0, int x1, int y1, uint16_t color) {
+  int dx = abs(x1 - x0);
+  int sx = (x0 < x1) ? 1 : -1;
+  int dy = -abs(y1 - y0);
+  int sy = (y0 < y1) ? 1 : -1;
+  int err = dx + dy;
+
+  while (true) {
+    drawPixelMapped(x0, y0, color);
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+
+    int e2 = err * 2;
+    if (e2 >= dy) {
+      err += dy;
+      x0 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
+}
+
+void drawCatFrame(int originX, int originY, uint8_t frameIndex) {
+  uint8_t frame = frameIndex & 0x03;
+  uint16_t orange = matrix->color565(255, 150, 40);
+  uint16_t cream = matrix->color565(255, 245, 220);
+  uint16_t pink = matrix->color565(255, 120, 170);
+  uint16_t outline = matrix->color565(40, 20, 10);
+
+  for (int y = 0; y < 8; y++) {
+    for (int x = 0; x < 12; x++) {
+      char pixel = catFrames[frame][y][x];
+      if (pixel == '.') {
+        continue;
+      }
+
+      uint16_t color = orange;
+      if (pixel == 'W') {
+        color = cream;
+      } else if (pixel == 'P') {
+        color = pink;
+      } else if (pixel == 'B') {
+        color = outline;
+      }
+
+      drawPixelMapped(originX + x, originY + y, color);
+    }
+  }
 }
 
 void drawAuroraFrame(uint32_t t) {
@@ -1300,6 +1487,953 @@ void drawSupernovaFrame(uint32_t t) {
   }
 }
 
+void drawVortexFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float cx = x - (PANEL_RES_X / 2.0f) + 0.5f;
+      float cy = y - (PANEL_RES_Y / 2.0f) + 0.5f;
+      float dist = sqrtf(cx * cx + cy * cy);
+      float angle = atan2f(cy, cx);
+      float spiral = angle * 3.0f - dist * 1.55f + t * 0.0060f;
+      float rings = sinf(dist * 1.65f - t * 0.0080f);
+      float glow = 0.5f + 0.5f * sinf(spiral);
+      float pulse = 0.5f + 0.5f * rings;
+
+      uint8_t hue = (uint8_t)(180 + 55 * sinf(spiral * 0.7f) + dist * 9.0f);
+      uint16_t base = colorWheel(hue);
+      uint8_t r = (((base >> 11) & 0x1F) << 3);
+      uint8_t g = (((base >> 5) & 0x3F) << 2);
+      uint8_t b = ((base & 0x1F) << 3);
+
+      float brightness = 0.18f + glow * 0.52f + pulse * 0.30f;
+      if (dist < 2.5f) {
+        brightness += (2.5f - dist) * 0.20f;
+      }
+
+      r = (uint8_t)min(255, (int)(r * brightness));
+      g = (uint8_t)min(255, (int)(g * brightness));
+      b = (uint8_t)min(255, (int)(b * brightness + 18 * glow));
+
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+}
+
+void drawLavaFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float nx = x * 0.33f;
+      float ny = y * 0.52f;
+      float flow =
+        sinf(nx + t * 0.0026f) +
+        sinf((nx + ny) * 1.3f - t * 0.0018f) +
+        cosf(ny * 1.7f + t * 0.0021f) +
+        sinf(sqrtf((x - 16.0f) * (x - 16.0f) + (y - 8.0f) * (y - 8.0f)) * 0.9f - t * 0.0038f);
+
+      float heat = 0.5f + 0.5f * (flow / 4.0f);
+      float crack = sinf((x * 1.9f) - (y * 0.8f) + t * 0.0042f);
+
+      uint8_t r = (uint8_t)(35 + heat * 220);
+      uint8_t g = (uint8_t)(heat * heat * 170);
+      uint8_t b = (uint8_t)(heat > 0.78f ? (heat - 0.78f) * 300 : 0);
+
+      if (heat < 0.24f && crack > 0.35f) {
+        r = 18;
+        g = 0;
+        b = 0;
+      } else if (heat > 0.86f) {
+        r = 255;
+        g = min(255, 180 + (int)((heat - 0.86f) * 420));
+        b = min(255, 40 + (int)((heat - 0.86f) * 360));
+      }
+
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+}
+
+void seedMeteors() {
+  for (int i = 0; i < MAX_METEORS; i++) {
+    meteorX[i] = PANEL_RES_X + random(20);
+    meteorY[i] = random(PANEL_RES_Y);
+    meteorVX[i] = -(1.1f + (random(100) / 100.0f) * 2.2f);
+    meteorVY[i] = 0.15f + (random(100) / 100.0f) * 0.95f;
+    meteorHue[i] = random(256);
+    meteorLength[i] = 5 + random(6);
+  }
+
+  for (int i = 0; i < MAX_METEOR_IMPACTS; i++) {
+    meteorImpactX[i] = 0.0f;
+    meteorImpactY[i] = 0.0f;
+    meteorImpactRadius[i] = 0.0f;
+    meteorImpactLife[i] = 0;
+  }
+}
+
+void respawnMeteor(int i) {
+  meteorX[i] = PANEL_RES_X - 1 + random(18);
+  meteorY[i] = random(PANEL_RES_Y / 2 + 2);
+  meteorVX[i] = -(1.2f + (random(100) / 100.0f) * 2.6f);
+  meteorVY[i] = 0.25f + (random(100) / 100.0f) * 1.10f;
+  meteorHue[i] = random(256);
+  meteorLength[i] = 6 + random(6);
+}
+
+void spawnMeteorImpact(float x, float y) {
+  for (int i = 0; i < MAX_METEOR_IMPACTS; i++) {
+    if (meteorImpactLife[i] != 0) {
+      continue;
+    }
+
+    meteorImpactX[i] = x;
+    meteorImpactY[i] = y;
+    meteorImpactRadius[i] = 0.5f;
+    meteorImpactLife[i] = 8;
+    return;
+  }
+}
+
+void drawMeteorFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float cloud = 0.5f + 0.5f * sinf((x * 0.28f) + (y * 0.46f) + t * 0.0010f);
+      uint8_t r = (uint8_t)(2 + cloud * 8);
+      uint8_t g = (uint8_t)(4 + cloud * 10);
+      uint8_t b = (uint8_t)(10 + cloud * 22);
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+
+  for (int s = 0; s < 18; s++) {
+    int sx = (s * 9 + (int)(t / (45 + (s % 4) * 10))) % PANEL_RES_X;
+    int sy = (s * 5 + (int)(t / (90 + (s % 3) * 20))) % PANEL_RES_Y;
+    drawPixelMapped(sx, sy, matrix->color565(25, 25, 40));
+    if ((s & 3) == 0 && sy + 1 < PANEL_RES_Y) {
+      drawPixelMapped(sx, sy + 1, matrix->color565(10, 10, 18));
+    }
+  }
+
+  if ((t / 180) % 2 == 0) {
+    int horizon = PANEL_RES_Y - 2;
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      uint8_t glow = (uint8_t)(18 + 22 * (0.5f + 0.5f * sinf((x * 0.55f) + t * 0.0025f)));
+      drawPixelMapped(x, horizon, matrix->color565(glow, glow / 3, 0));
+    }
+  }
+
+  for (int i = 0; i < MAX_METEOR_IMPACTS; i++) {
+    if (meteorImpactLife[i] == 0) {
+      continue;
+    }
+
+    drawSoftGlow((int)(meteorImpactX[i] + 0.5f),
+                 (int)(meteorImpactY[i] + 0.5f),
+                 meteorImpactRadius[i],
+                 matrix->color565(255, 170, 80),
+                 (uint8_t)(meteorImpactLife[i] * 28));
+    meteorImpactRadius[i] += 0.9f;
+    meteorImpactLife[i]--;
+  }
+
+  for (int i = 0; i < MAX_METEORS; i++) {
+    meteorX[i] += meteorVX[i];
+    meteorY[i] += meteorVY[i];
+
+    if (meteorX[i] < -meteorLength[i] || meteorY[i] >= PANEL_RES_Y + meteorLength[i]) {
+      if (meteorY[i] >= PANEL_RES_Y - 1) {
+        spawnMeteorImpact(meteorX[i], PANEL_RES_Y - 2);
+      }
+      respawnMeteor(i);
+    }
+
+    for (int step = 0; step < meteorLength[i]; step++) {
+      int px = (int)(meteorX[i] - meteorVX[i] * step + 0.5f);
+      int py = (int)(meteorY[i] - meteorVY[i] * step + 0.5f);
+      if (px < 0 || px >= PANEL_RES_X || py < 0 || py >= PANEL_RES_Y) {
+        continue;
+      }
+
+      uint16_t base = colorWheel(meteorHue[i] + step * 6 + (uint8_t)(t / 14));
+      uint8_t r = (((base >> 11) & 0x1F) << 3);
+      uint8_t g = (((base >> 5) & 0x3F) << 2);
+      uint8_t b = ((base & 0x1F) << 3);
+      int lengthDivisor = (meteorLength[i] > 0) ? meteorLength[i] : 1;
+      int scale = 255 - step * (190 / lengthDivisor);
+      if (step == 0) {
+        r = 255;
+        g = 255;
+        b = 255;
+      } else if (step == 1) {
+        r = 255;
+        g = min(255, 180 + scale / 3);
+        b = min(255, 120 + scale / 4);
+      } else {
+        r = (uint8_t)((r * scale) / 255);
+        g = (uint8_t)((g * scale) / 255);
+        b = (uint8_t)((b * scale) / 255);
+      }
+
+      drawPixelMapped(px, py, matrix->color565(r, g, b));
+    }
+  }
+}
+
+void drawStormFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float cloudA = sinf((x * 0.32f) + t * 0.0015f);
+      float cloudB = cosf((y * 0.75f) - t * 0.0020f);
+      float cloudC = sinf(((x + y) * 0.22f) + t * 0.0011f);
+      float storm = (cloudA * 0.45f) + (cloudB * 0.35f) + (cloudC * 0.20f);
+      uint8_t r = (uint8_t)(6 + 12 * (0.5f + 0.5f * storm));
+      uint8_t g = (uint8_t)(10 + 24 * (0.5f + 0.5f * storm));
+      uint8_t b = (uint8_t)(18 + 44 * (0.5f + 0.5f * storm));
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    int rainY = (int)((t / 25 + x * 3) % (PANEL_RES_Y + 6)) - 3;
+    if (rainY >= 0 && rainY < PANEL_RES_Y) {
+      drawPixelMapped(x, rainY, matrix->color565(80, 120, 255));
+    }
+    if (rainY + 1 >= 0 && rainY + 1 < PANEL_RES_Y && (x & 1) == 0) {
+      drawPixelMapped(x, rainY + 1, matrix->color565(30, 60, 120));
+    }
+  }
+
+  if (stormBoltLife == 0 && random(100) < 7) {
+    stormBoltLife = 4 + random(4);
+    stormBoltHue = 180 + random(30);
+    int currentX = random(4, PANEL_RES_X - 4);
+    for (int y = 0; y < PANEL_RES_Y; y++) {
+      currentX += random(3) - 1;
+      if (currentX < 1) {
+        currentX = 1;
+      } else if (currentX > PANEL_RES_X - 2) {
+        currentX = PANEL_RES_X - 2;
+      }
+      stormBoltMask[y] = (uint8_t)currentX;
+    }
+  }
+
+  if (stormBoltLife > 0) {
+    uint16_t boltColor = colorWheel(stormBoltHue + (uint8_t)(t / 8));
+    for (int y = 0; y < PANEL_RES_Y; y++) {
+      int x = stormBoltMask[y];
+      drawPixelMapped(x, y, WHITE);
+      if (x > 0) {
+        drawPixelMapped(x - 1, y, scaleColor565(boltColor, 120));
+      }
+      if (x + 1 < PANEL_RES_X) {
+        drawPixelMapped(x + 1, y, scaleColor565(boltColor, 120));
+      }
+    }
+
+    drawSoftGlow(stormBoltMask[PANEL_RES_Y - 1], PANEL_RES_Y - 1, 3.0f, WHITE, 180);
+    stormBoltLife--;
+  }
+}
+
+void drawGalaxyFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float cx = x - (PANEL_RES_X / 2.0f);
+      float cy = y - (PANEL_RES_Y / 2.0f);
+      float dist = sqrtf(cx * cx + cy * cy);
+      float angle = atan2f(cy, cx);
+      float spin = t * 0.0038f;
+      float armA = 0.5f + 0.5f * sinf(angle * 3.0f + dist * 0.95f - spin);
+      float armB = 0.5f + 0.5f * cosf(angle * 2.0f - dist * 1.15f + spin * 0.7f);
+      float dust = 0.5f + 0.5f * sinf((x * 0.52f) - (y * 0.31f) + t * 0.0019f);
+      float core = (dist < 3.8f) ? (3.8f - dist) / 3.8f : 0.0f;
+      float nebula = armA * 0.45f + armB * 0.35f + dust * 0.20f;
+
+      uint8_t hue = (uint8_t)(dist * 18.0f + angle * 28.0f + t / 9 + armA * 80.0f);
+      uint16_t base = colorWheel(hue);
+      uint8_t r = (((base >> 11) & 0x1F) << 3);
+      uint8_t g = (((base >> 5) & 0x3F) << 2);
+      uint8_t b = ((base & 0x1F) << 3);
+
+      float brightness = 0.18f + nebula * 0.95f + core * 0.90f;
+      if (dist > 8.5f) {
+        brightness *= 0.62f;
+      }
+
+      r = (uint8_t)min(255, (int)(r * brightness + core * 180.0f));
+      g = (uint8_t)min(255, (int)(g * brightness + core * 160.0f));
+      b = (uint8_t)min(255, (int)(b * brightness + core * 220.0f));
+
+      if (armA > 0.86f || armB > 0.88f) {
+        r = min(255, (int)r + 55);
+        g = min(255, (int)g + 35);
+        b = min(255, (int)b + 65);
+      }
+
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+
+  for (int s = 0; s < 24; s++) {
+    int sx = (s * 13 + (int)(t / (24 + (s % 5) * 5))) % PANEL_RES_X;
+    int sy = (s * 7 + (int)(t / (48 + (s % 4) * 9))) % PANEL_RES_Y;
+    uint16_t starColor = ((s % 4) == 0) ? WHITE : colorWheel((uint8_t)(s * 23 + t / 12));
+    drawPixelMapped(sx, sy, starColor);
+    if ((s % 6) == 0 && sx + 1 < PANEL_RES_X) {
+      drawPixelMapped(sx + 1, sy, scaleColor565(starColor, 120));
+    }
+  }
+}
+
+void seedSquareBursts() {
+  for (int i = 0; i < MAX_SQUARE_BURSTS; i++) {
+    squareBurstLife[i] = 0;
+    squareBurstRadius[i] = 0.0f;
+    squareBurstHue[i] = 0;
+    squareBurstX[i] = 0.0f;
+    squareBurstY[i] = 0.0f;
+  }
+}
+
+void spawnSquareBurst() {
+  for (int i = 0; i < MAX_SQUARE_BURSTS; i++) {
+    if (squareBurstLife[i] != 0) {
+      continue;
+    }
+
+    squareBurstX[i] = random(3, PANEL_RES_X - 3);
+    squareBurstY[i] = random(3, PANEL_RES_Y - 3);
+    squareBurstRadius[i] = 0.0f;
+    squareBurstLife[i] = 10 + random(6);
+    squareBurstHue[i] = random(256);
+    return;
+  }
+}
+
+void drawSquareBurstFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float bg = 0.5f + 0.5f * sinf((x * 0.3f) + (y * 0.47f) + t * 0.0014f);
+      uint8_t r = (uint8_t)(4 + 10 * bg);
+      uint8_t g = (uint8_t)(2 + 8 * bg);
+      uint8_t b = (uint8_t)(10 + 22 * bg);
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+
+  if (random(100) < 22) {
+    spawnSquareBurst();
+  }
+
+  for (int i = 0; i < MAX_SQUARE_BURSTS; i++) {
+    if (squareBurstLife[i] == 0) {
+      continue;
+    }
+
+    int cx = (int)(squareBurstX[i] + 0.5f);
+    int cy = (int)(squareBurstY[i] + 0.5f);
+    int radius = (int)(squareBurstRadius[i] + 0.5f);
+    uint16_t color = colorWheel(squareBurstHue[i] + (uint8_t)(t / 10));
+
+    if (squareBurstLife[i] > 8) {
+      for (int oy = -1; oy <= 1; oy++) {
+        for (int ox = -1; ox <= 1; ox++) {
+          drawPixelMapped(cx + ox, cy + oy, color);
+        }
+      }
+      drawPixelMapped(cx, cy, WHITE);
+    } else {
+      for (int x = cx - radius; x <= cx + radius; x++) {
+        drawPixelMapped(x, cy - radius, color);
+        drawPixelMapped(x, cy + radius, color);
+      }
+      for (int y = cy - radius; y <= cy + radius; y++) {
+        drawPixelMapped(cx - radius, y, color);
+        drawPixelMapped(cx + radius, y, color);
+      }
+
+      if (radius > 1) {
+        uint16_t inner = scaleColor565(color, 130);
+        drawPixelMapped(cx - radius + 1, cy - radius + 1, inner);
+        drawPixelMapped(cx + radius - 1, cy - radius + 1, inner);
+        drawPixelMapped(cx - radius + 1, cy + radius - 1, inner);
+        drawPixelMapped(cx + radius - 1, cy + radius - 1, inner);
+      }
+
+      drawSoftGlow(cx, cy, squareBurstRadius[i] + 0.6f, color, (uint8_t)(squareBurstLife[i] * 16));
+    }
+
+    squareBurstRadius[i] += 0.75f;
+    squareBurstLife[i]--;
+  }
+}
+
+void drawSmokeFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float nx = x * 0.24f;
+      float ny = y * 0.36f;
+      float swirl =
+        sinf(nx + t * 0.0014f) +
+        cosf(ny * 1.6f - t * 0.0010f) +
+        sinf((nx + ny) * 1.2f + t * 0.0017f) +
+        cosf(sqrtf((x - 16.0f) * (x - 16.0f) + (y - 8.0f) * (y - 8.0f)) * 0.8f - t * 0.0019f);
+      float density = 0.5f + 0.5f * (swirl / 4.0f);
+      uint8_t hue = (uint8_t)(120 + x * 4 + y * 7 + t / 15);
+      uint16_t base = colorWheel(hue);
+      uint8_t r = (((base >> 11) & 0x1F) << 3);
+      uint8_t g = (((base >> 5) & 0x3F) << 2);
+      uint8_t b = ((base & 0x1F) << 3);
+      float brightness = 0.08f + density * 0.70f;
+      r = (uint8_t)(r * brightness);
+      g = (uint8_t)(g * brightness);
+      b = (uint8_t)(b * brightness);
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+}
+
+void drawBlobsFrame(uint32_t t) {
+  float centers[4][2] = {
+    {9.0f + 6.0f * sinf(t * 0.0012f), 5.5f + 3.0f * cosf(t * 0.0015f)},
+    {21.0f + 5.5f * cosf(t * 0.0010f), 6.0f + 4.0f * sinf(t * 0.0016f)},
+    {14.0f + 7.0f * sinf(t * 0.0018f), 10.0f + 2.5f * cosf(t * 0.0013f)},
+    {24.0f + 4.5f * cosf(t * 0.0014f), 10.5f + 3.0f * sinf(t * 0.0011f)}
+  };
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float field = 0.0f;
+      for (int i = 0; i < 4; i++) {
+        float dx = x - centers[i][0];
+        float dy = y - centers[i][1];
+        field += 34.0f / (1.5f + dx * dx + dy * dy);
+      }
+
+      if (field > 2.7f) {
+        uint8_t hue = (uint8_t)(180 + field * 30.0f + t / 10 + x * 4);
+        uint16_t base = colorWheel(hue);
+        drawPixelMapped(x, y, scaleColor565(base, 210));
+      } else {
+        uint8_t bg = (uint8_t)(4 + 10 * (0.5f + 0.5f * sinf(x * 0.2f + y * 0.35f + t * 0.001f)));
+        drawPixelMapped(x, y, matrix->color565(bg / 3, 0, bg));
+      }
+    }
+  }
+}
+
+void drawWindFireFrame(uint32_t t) {
+  float wind = sinf(t * 0.0018f) * 1.5f + cosf(t * 0.0009f) * 0.7f;
+
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    int sourceX = x + (int)wind;
+    if (sourceX < 0) {
+      sourceX = 0;
+    } else if (sourceX >= PANEL_RES_X) {
+      sourceX = PANEL_RES_X - 1;
+    }
+    fireHeat[sourceX][PANEL_RES_Y - 1] = 170 + random(86);
+  }
+
+  for (int y = 0; y < PANEL_RES_Y - 1; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      int below = y + 1;
+      int drift = (int)(wind + ((y & 1) ? 1 : -1));
+      int center = (x + drift + PANEL_RES_X) % PANEL_RES_X;
+      int left = (center - 1 + PANEL_RES_X) % PANEL_RES_X;
+      int right = (center + 1) % PANEL_RES_X;
+
+      int heat = fireHeat[center][below];
+      heat += fireHeat[left][below];
+      heat += fireHeat[right][below];
+      if (below + 1 < PANEL_RES_Y) {
+        heat += fireHeat[center][below + 1];
+      }
+
+      heat /= 4;
+      heat -= random(0, 12);
+      if (heat < 0) {
+        heat = 0;
+      }
+      fireHeat[x][y] = heat;
+    }
+  }
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      uint16_t color = heatColor(fireHeat[x][y]);
+      if (y < 4 && fireHeat[x][y] > 80) {
+        color = scaleColor565(color, 190);
+      }
+      drawPixelMapped(x, y, color);
+    }
+  }
+}
+
+void drawRipplesFrame(uint32_t t) {
+  float px = 16.0f + 10.0f * sinf(t * 0.0013f);
+  float py = 8.0f + 5.0f * cosf(t * 0.0018f);
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = x - px;
+      float dy = y - py;
+      float dist = sqrtf(dx * dx + dy * dy);
+      float ripple = sinf(dist * 1.4f - t * 0.008f) + 0.55f * sinf(dist * 2.2f - t * 0.005f);
+      float water = 0.5f + 0.5f * ripple;
+      uint8_t r = (uint8_t)(4 + 18 * water);
+      uint8_t g = (uint8_t)(20 + 70 * water);
+      uint8_t b = (uint8_t)(40 + 170 * water);
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+
+  drawSoftGlow((int)(px + 0.5f), (int)(py + 0.5f), 1.8f, WHITE, 180);
+}
+
+void drawCircuitFrame(uint32_t t) {
+  matrix->fillScreen(BLACK);
+  for (int x = 2; x < PANEL_RES_X; x += 5) {
+    for (int y = 0; y < PANEL_RES_Y; y++) {
+      drawPixelMapped(x, y, matrix->color565(0, 22, 8));
+    }
+  }
+  for (int y = 2; y < PANEL_RES_Y; y += 4) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      drawPixelMapped(x, y, matrix->color565(0, 18, 8));
+    }
+  }
+
+  int phase = (int)((t / 40) % 40);
+  int pathX[6] = {2, 12, 12, 22, 22, 30};
+  int pathY[6] = {13, 13, 4, 4, 10, 10};
+  for (int i = 0; i < 5; i++) {
+    drawLineMapped(pathX[i], pathY[i], pathX[i + 1], pathY[i + 1], matrix->color565(10, 40, 20));
+  }
+
+  int px = 2;
+  int py = 13;
+  if (phase < 10) {
+    px = 2 + phase;
+    py = 13;
+  } else if (phase < 19) {
+    px = 12;
+    py = 13 - (phase - 10);
+  } else if (phase < 29) {
+    px = 12 + (phase - 19);
+    py = 4;
+  } else {
+    px = 22 + (phase - 29);
+    py = 10;
+  }
+
+  drawSoftGlow(px, py, 2.4f, colorWheel((uint8_t)(t / 8)), 230);
+  drawPixelMapped(px, py, WHITE);
+}
+
+void drawRadarFrame(uint32_t t) {
+  int cx = PANEL_RES_X / 2;
+  int cy = PANEL_RES_Y / 2;
+  float sweep = fmodf(t * 0.0045f, 6.2831853f);
+  const int targets[5][2] = {{6, 3}, {24, 4}, {27, 11}, {11, 12}, {18, 7}};
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = x - cx;
+      float dy = y - cy;
+      float angle = atan2f(dy, dx);
+      float diff = fabsf(angle - sweep);
+      if (diff > 3.1415926f) {
+        diff = 6.2831853f - diff;
+      }
+      float ring = sinf(sqrtf(dx * dx + dy * dy) * 1.1f - t * 0.002f);
+      uint8_t g = (uint8_t)(8 + 28 * (0.5f + 0.5f * ring));
+      if (diff < 0.30f) {
+        g = min(255, (int)g + (int)((0.30f - diff) * 420.0f));
+      }
+      drawPixelMapped(x, y, matrix->color565(0, g, g / 4));
+    }
+  }
+
+  for (int i = 0; i < 5; i++) {
+    float dx = targets[i][0] - cx;
+    float dy = targets[i][1] - cy;
+    float angle = atan2f(dy, dx);
+    float diff = fabsf(angle - sweep);
+    if (diff > 3.1415926f) {
+      diff = 6.2831853f - diff;
+    }
+    uint16_t color = (diff < 0.22f) ? WHITE : matrix->color565(0, 120, 40);
+    drawSoftGlow(targets[i][0], targets[i][1], (diff < 0.22f) ? 1.8f : 0.8f, color, (diff < 0.22f) ? 220 : 120);
+    drawPixelMapped(targets[i][0], targets[i][1], color);
+  }
+}
+
+void drawStyleRainFrame(uint32_t t) {
+  matrix->fillScreen(BLACK);
+  for (int x = 0; x < PANEL_RES_X; x += 2) {
+    int head = (int)((t / (28 + (x % 6) * 7) + x * 3) % (PANEL_RES_Y + 10)) - 5;
+    int len = 3 + (x % 4);
+    for (int i = 0; i < len; i++) {
+      int y = head - i;
+      if (y < 0 || y >= PANEL_RES_Y) {
+        continue;
+      }
+      uint16_t color;
+      if (i == 0) {
+        color = WHITE;
+      } else if ((x / 2 + i) & 1) {
+        color = matrix->color565(0, 255 - i * 25, 200);
+      } else {
+        color = matrix->color565(255 - i * 30, 40, 180);
+      }
+      drawPixelMapped(x, y, color);
+      if (x + 1 < PANEL_RES_X && (i & 1) == 0) {
+        drawPixelMapped(x + 1, y, scaleColor565(color, 150));
+      }
+    }
+  }
+}
+
+void drawNeuralFrame(uint32_t t) {
+  const int nodes[8][2] = {{4, 3}, {12, 4}, {20, 3}, {27, 6}, {8, 11}, {16, 8}, {23, 12}, {29, 9}};
+  const int edges[10][2] = {{0,1},{1,2},{2,3},{0,4},{1,5},{4,5},{5,6},{2,5},{5,7},{6,7}};
+  matrix->fillScreen(BLACK);
+
+  for (int i = 0; i < 10; i++) {
+    int a = edges[i][0];
+    int b = edges[i][1];
+    drawLineMapped(nodes[a][0], nodes[a][1], nodes[b][0], nodes[b][1], matrix->color565(15, 20, 50));
+    float phase = fmodf(t * 0.0018f + i * 0.27f, 1.0f);
+    int px = (int)(nodes[a][0] + (nodes[b][0] - nodes[a][0]) * phase + 0.5f);
+    int py = (int)(nodes[a][1] + (nodes[b][1] - nodes[a][1]) * phase + 0.5f);
+    uint16_t pulse = colorWheel((uint8_t)(t / 9 + i * 20));
+    drawSoftGlow(px, py, 1.5f, pulse, 200);
+    drawPixelMapped(px, py, WHITE);
+  }
+
+  for (int i = 0; i < 8; i++) {
+    uint16_t nodeColor = colorWheel((uint8_t)(t / 12 + i * 28));
+    drawSoftGlow(nodes[i][0], nodes[i][1], 1.6f, nodeColor, 180);
+    drawPixelMapped(nodes[i][0], nodes[i][1], WHITE);
+  }
+}
+
+void drawTunnelFrame(uint32_t t) {
+  int cx = PANEL_RES_X / 2;
+  int cy = PANEL_RES_Y / 2;
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = x - cx;
+      float dy = y - cy;
+      float dist = sqrtf(dx * dx + dy * dy);
+      float angle = atan2f(dy, dx);
+      float rings = sinf(dist * 1.8f - t * 0.012f);
+      uint8_t hue = (uint8_t)(dist * 24.0f - angle * 30.0f + t / 6);
+      uint16_t base = colorWheel(hue);
+      uint8_t brightness = (uint8_t)(40 + 190 * (0.5f + 0.5f * rings));
+      drawPixelMapped(x, y, scaleColor565(base, brightness));
+    }
+  }
+}
+
+void drawCubeFrame(uint32_t t) {
+  const float verts[8][3] = {
+    {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},
+    {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1}
+  };
+  const int edges[12][2] = {
+    {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}
+  };
+  int pts[8][2];
+  float ay = t * 0.0017f;
+  float ax = t * 0.0011f;
+  matrix->fillScreen(BLACK);
+
+  for (int i = 0; i < 8; i++) {
+    float x = verts[i][0];
+    float y = verts[i][1];
+    float z = verts[i][2];
+    float rx = x * cosf(ay) - z * sinf(ay);
+    float rz = x * sinf(ay) + z * cosf(ay);
+    float ry = y * cosf(ax) - rz * sinf(ax);
+    rz = y * sinf(ax) + rz * cosf(ax) + 3.3f;
+    pts[i][0] = (int)(16 + rx * 6.0f / rz + 0.5f);
+    pts[i][1] = (int)(8 + ry * 6.0f / rz + 0.5f);
+  }
+
+  for (int i = 0; i < 12; i++) {
+    uint16_t color = colorWheel((uint8_t)(t / 8 + i * 18));
+    drawLineMapped(pts[edges[i][0]][0], pts[edges[i][0]][1], pts[edges[i][1]][0], pts[edges[i][1]][1], color);
+  }
+}
+
+void drawKaleidoFrame(uint32_t t) {
+  int cx = PANEL_RES_X / 2;
+  int cy = PANEL_RES_Y / 2;
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = fabsf(x - cx);
+      float dy = fabsf(y - cy);
+      float ax = (dx > dy) ? dx : dy;
+      float ay = (dx > dy) ? dy : dx;
+      float wave = sinf(ax * 0.85f + t * 0.0030f) + cosf((ax + ay) * 0.55f - t * 0.0021f);
+      uint8_t hue = (uint8_t)(ax * 18.0f + ay * 28.0f + t / 7);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), (uint8_t)(50 + 180 * (0.5f + 0.5f * wave))));
+    }
+  }
+}
+
+void drawSpiralFrame(uint32_t t) {
+  int cx = PANEL_RES_X / 2;
+  int cy = PANEL_RES_Y / 2;
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = x - cx;
+      float dy = y - cy;
+      float angle = atan2f(dy, dx);
+      float dist = sqrtf(dx * dx + dy * dy);
+      float spiral = sinf(angle * 5.0f + dist * 1.25f - t * 0.008f);
+      uint8_t hue = (uint8_t)(angle * 40.0f + dist * 20.0f + t / 8);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), (uint8_t)(30 + 210 * (0.5f + 0.5f * spiral))));
+    }
+  }
+}
+
+void drawInterferenceFrame(uint32_t t) {
+  float sx1 = 8.0f + 6.0f * sinf(t * 0.0012f);
+  float sy1 = 4.0f + 2.5f * cosf(t * 0.0018f);
+  float sx2 = 24.0f + 6.0f * cosf(t * 0.0015f);
+  float sy2 = 11.0f + 2.5f * sinf(t * 0.0011f);
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float d1 = sqrtf((x - sx1) * (x - sx1) + (y - sy1) * (y - sy1));
+      float d2 = sqrtf((x - sx2) * (x - sx2) + (y - sy2) * (y - sy2));
+      float wave = sinf(d1 * 1.7f - t * 0.008f) + sinf(d2 * 1.7f - t * 0.008f);
+      uint8_t hue = (uint8_t)(128 + wave * 55.0f + x * 2 + t / 10);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), (uint8_t)(40 + 180 * (0.5f + 0.5f * (wave * 0.5f)))));
+    }
+  }
+}
+
+void drawTessellateFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float u = x * 0.36f;
+      float v = y * 0.62f;
+      float tile = sinf(u + t * 0.0015f) * cosf(v - t * 0.0012f) + sinf((u + v) * 1.3f + t * 0.0010f);
+      float bands = fabsf(sinf((x + (y & 1) * 0.5f) * 0.7f + t * 0.0018f));
+      uint8_t hue = (uint8_t)(x * 11 + y * 17 + t / 9);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), (uint8_t)(30 + 200 * (0.35f + 0.35f * tile + 0.30f * bands))));
+    }
+  }
+}
+
+void drawBeatBurstFrame(uint32_t t) {
+  int beat = (int)((t / 220) % 8);
+  int centers[8][2] = {{6,4},{16,3},{25,5},{9,10},{20,9},{28,12},{4,12},{15,8}};
+  matrix->fillScreen(BLACK);
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      drawPixelMapped(x, y, matrix->color565(0, 0, 10));
+    }
+  }
+  for (int i = 0; i < 8; i++) {
+    float phase = fmodf((t % 220) / 220.0f + i * 0.12f, 1.0f);
+    float radius = phase * 7.0f;
+    uint16_t color = colorWheel((uint8_t)(i * 30 + t / 6));
+    drawSoftGlow(centers[i][0], centers[i][1], radius, color, (uint8_t)(220 * (1.0f - phase)));
+  }
+  drawPixelMapped(centers[beat][0], centers[beat][1], WHITE);
+}
+
+void drawSunriseFrame(uint32_t t) {
+  float sunY = 14.0f - 6.0f * (0.5f + 0.5f * sinf(t * 0.0005f));
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float grad = (float)y / (float)(PANEL_RES_Y - 1);
+      uint8_t r = (uint8_t)(20 + 235 * (1.0f - grad));
+      uint8_t g = (uint8_t)(10 + 120 * (1.0f - fabsf(grad - 0.45f)));
+      uint8_t b = (uint8_t)(30 + 120 * grad);
+      float dx = x - 16.0f;
+      float dy = y - sunY;
+      float dist = sqrtf(dx * dx + dy * dy);
+      if (dist < 4.2f) {
+        r = min(255, (int)r + (int)((4.2f - dist) * 35));
+        g = min(255, (int)g + (int)((4.2f - dist) * 22));
+      }
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    int skyline = 10 + (int)(2.2f * sinf(x * 0.42f) + 1.5f * cosf(x * 0.18f + t * 0.0002f));
+    for (int y = skyline; y < PANEL_RES_Y; y++) {
+      drawPixelMapped(x, y, matrix->color565(8, 6, 12));
+    }
+  }
+}
+
+void drawPacmanFrame(uint32_t t) {
+  int pacX = (int)((t / 90) % (PANEL_RES_X + 10)) - 5;
+  int ghostBase = pacX - 10;
+  int y = 8;
+  matrix->fillScreen(BLACK);
+  for (int i = 0; i < PANEL_RES_X; i += 4) {
+    drawPixelMapped(i, y, matrix->color565(255, 220, 120));
+  }
+  float mouth = fabsf(sinf(t * 0.01f));
+  for (int oy = -2; oy <= 2; oy++) {
+    for (int ox = -2; ox <= 2; ox++) {
+      if (ox * ox + oy * oy > 6) continue;
+      if (ox > 0 && fabsf((float)oy) < mouth * 2.5f) continue;
+      drawPixelMapped(pacX + ox, y + oy, matrix->color565(255, 230, 0));
+    }
+  }
+  uint16_t ghostColors[3] = {matrix->color565(255, 0, 0), matrix->color565(255, 120, 220), matrix->color565(0, 255, 255)};
+  for (int g = 0; g < 3; g++) {
+    int gx = ghostBase - g * 5;
+    for (int oy = -2; oy <= 2; oy++) {
+      for (int ox = -2; ox <= 2; ox++) {
+        if (oy == 2 && ((ox + g) & 1)) continue;
+        if (ox * ox + oy * oy > 7) continue;
+        drawPixelMapped(gx + ox, y + oy, ghostColors[g]);
+      }
+    }
+    drawPixelMapped(gx - 1, y - 1, WHITE);
+    drawPixelMapped(gx + 1, y - 1, WHITE);
+  }
+}
+
+void drawSphereFrame(uint32_t t) {
+  matrix->fillScreen(BLACK);
+  for (int i = 0; i < 64; i++) {
+    float phi = (i / 64.0f) * 6.2831853f * 2.0f;
+    float theta = acosf(1.0f - 2.0f * ((i + 0.5f) / 64.0f));
+    float x = sinf(theta) * cosf(phi + t * 0.0018f);
+    float y = cosf(theta);
+    float z = sinf(theta) * sinf(phi + t * 0.0018f);
+    float rx = x * cosf(t * 0.0011f) - z * sinf(t * 0.0011f);
+    float rz = x * sinf(t * 0.0011f) + z * cosf(t * 0.0011f) + 2.4f;
+    int px = (int)(16 + rx * 9.0f / rz + 0.5f);
+    int py = (int)(8 + y * 8.0f / rz + 0.5f);
+    uint16_t color = colorWheel((uint8_t)(i * 4 + t / 8));
+    drawPixelMapped(px, py, color);
+  }
+}
+
+void drawParallaxFrame(uint32_t t) {
+  matrix->fillScreen(BLACK);
+  for (int i = 0; i < 18; i++) {
+    int x = (PANEL_RES_X - 1) - ((int)(t / (35 + (i % 3) * 20) + i * 7) % (PANEL_RES_X + 6));
+    int y = (i * 5) % PANEL_RES_Y;
+    drawPixelMapped(x, y, matrix->color565(60, 60, 120));
+  }
+  for (int i = 0; i < 12; i++) {
+    int x = (PANEL_RES_X - 1) - ((int)(t / (18 + (i % 3) * 10) + i * 11) % (PANEL_RES_X + 8));
+    int y = (i * 7 + 3) % PANEL_RES_Y;
+    drawPixelMapped(x, y, matrix->color565(140, 140, 220));
+    if (x + 1 < PANEL_RES_X) {
+      drawPixelMapped(x + 1, y, matrix->color565(40, 40, 80));
+    }
+  }
+  for (int i = 0; i < 8; i++) {
+    int x = (PANEL_RES_X - 1) - ((int)(t / (8 + (i % 2) * 3) + i * 15) % (PANEL_RES_X + 10));
+    int y = (i * 9 + 1) % PANEL_RES_Y;
+    drawPixelMapped(x, y, WHITE);
+    if (x + 1 < PANEL_RES_X) drawPixelMapped(x + 1, y, matrix->color565(100, 100, 160));
+  }
+}
+
+void drawMoireFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float lineA = sinf(x * 0.65f + t * 0.0030f);
+      float lineB = sinf((x + y) * 0.62f - t * 0.0026f);
+      float lineC = sinf((x - y) * 0.58f + t * 0.0021f);
+      float mix = (lineA + lineB + lineC) / 3.0f;
+      uint8_t hue = (uint8_t)(128 + mix * 90.0f + t / 12);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), (uint8_t)(30 + 200 * (0.5f + 0.5f * mix))));
+    }
+  }
+}
+
+void drawMorphFrame(uint32_t t) {
+  char sequence[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'};
+  int idx = (t / 1800) % 7;
+  float phase = (t % 1800) / 1800.0f;
+  const uint8_t* fromRows = getGlyphRows(sequence[idx]);
+  const uint8_t* toRows = getGlyphRows(sequence[idx + 1]);
+  matrix->fillScreen(BLACK);
+  int startX = 1;
+  int startY = 4;
+  for (int gy = 0; gy < 7; gy++) {
+    for (int gx = 0; gx < 5; gx++) {
+      bool fromOn = fromRows[gy] & (1 << (4 - gx));
+      bool toOn = toRows[gy] & (1 << (4 - gx));
+      if (!fromOn && !toOn) continue;
+      int x = startX + gx * 6;
+      int y = startY + gy;
+      if (fromOn && phase < 0.65f) {
+        drawPixelMapped(x, y, scaleColor565(colorWheel((uint8_t)(gx * 20 + gy * 18 + t / 14)), (uint8_t)(255 - phase * 255)));
+      }
+      if (toOn && phase > 0.35f) {
+        drawPixelMapped(x, y, scaleColor565(colorWheel((uint8_t)(180 + gx * 20 + gy * 16 + t / 11)), (uint8_t)((phase - 0.35f) * 392.0f)));
+      }
+    }
+  }
+}
+
+void drawCatRunFrame(uint32_t t) {
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float sky = 0.5f + 0.5f * sinf((x * 0.25f) - (t * 0.0018f));
+      uint8_t r = (uint8_t)(30 + 30 * sky);
+      uint8_t g = (uint8_t)(10 + 16 * sky);
+      uint8_t b = (uint8_t)(60 + 70 * sky);
+      if (y > PANEL_RES_Y / 2) {
+        r = (uint8_t)(8 + y * 4);
+        g = (uint8_t)(20 + y * 6);
+        b = (uint8_t)(20 + y * 2);
+      }
+      drawPixelMapped(x, y, matrix->color565(r, g, b));
+    }
+  }
+
+  int groundY = PANEL_RES_Y - 2;
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    uint8_t stripe = (uint8_t)((x * 14 + (t / 8)) & 0x3F);
+    drawPixelMapped(x, groundY, matrix->color565(20 + stripe, 180, 90));
+    if (groundY + 1 < PANEL_RES_Y) {
+      drawPixelMapped(x, groundY + 1, matrix->color565(8, 70, 35));
+    }
+  }
+
+  for (int s = 0; s < 8; s++) {
+    int sx = (s * 19 + (int)(t / 32)) % PANEL_RES_X;
+    int sy = 1 + ((s * 3) % 5);
+    drawPixelMapped(sx, sy, matrix->color565(255, 240, 180));
+  }
+
+  catRunOffsetX += 1;
+  if (catRunOffsetX > PANEL_RES_X) {
+    catRunOffsetX = -12;
+  }
+  catRunFrame = (uint8_t)((t / 90) & 0x03);
+
+  drawCatFrame(catRunOffsetX, PANEL_RES_Y - 10, catRunFrame);
+
+  if (catRunOffsetX > -10 && catRunOffsetX < PANEL_RES_X) {
+    int dustX = catRunOffsetX - 1;
+    int dustY = PANEL_RES_Y - 2;
+    if (dustX >= 0 && dustX < PANEL_RES_X) {
+      drawPixelMapped(dustX, dustY, matrix->color565(180, 180, 120));
+    }
+    if (dustX - 1 >= 0 && (catRunFrame & 1)) {
+      drawPixelMapped(dustX - 1, dustY - 1, matrix->color565(120, 120, 80));
+    }
+  }
+}
+
 void printHelp() {
   Serial.println();
   Serial.println("Calibration commands:");
@@ -1326,6 +2460,34 @@ void printHelp() {
   Serial.println("  fluid        -> run fluid-like rainbow motion");
   Serial.println("  fireworks    -> run rainbow fireworks");
   Serial.println("  supernova    -> run the cinematic plasma + fireworks showpiece");
+  Serial.println("  vortex       -> run a neon spiral tunnel");
+  Serial.println("  lava         -> run a molten lava field");
+  Serial.println("  meteor       -> run an upgraded comet-storm sky with impacts");
+  Serial.println("  storm        -> run an electric storm with lightning");
+  Serial.println("  galaxy       -> run a colorful bright spiral galaxy");
+  Serial.println("  catrun       -> run a looping cat animation left to right");
+  Serial.println("  squareburst  -> run colorful squares that pop and explode");
+  Serial.println("  smoke        -> run color smoke / ink in water");
+  Serial.println("  blobs        -> run lava-lamp blobs that merge and split");
+  Serial.println("  windfire     -> run a windy fire effect");
+  Serial.println("  ripples      -> run water ripples from a moving point");
+  Serial.println("  circuit      -> run an energy pulse through circuits");
+  Serial.println("  radar        -> run a radar sweep with glowing targets");
+  Serial.println("  stylerain    -> run stylized digital rain");
+  Serial.println("  neural       -> run neural-network light paths");
+  Serial.println("  tunnel       -> run an infinite tunnel zoom");
+  Serial.println("  cube         -> run a rotating wireframe cube");
+  Serial.println("  kaleido      -> run kaleidoscope symmetry");
+  Serial.println("  spiral       -> run a spiral vortex");
+  Serial.println("  interfere    -> run wave interference patterns");
+  Serial.println("  tessellate   -> run morphing tessellations");
+  Serial.println("  beatburst    -> run particle explosions on beats");
+  Serial.println("  sunrise      -> run a sunrise over silhouettes");
+  Serial.println("  pacman       -> run a Pac-Man style chase loop");
+  Serial.println("  sphere       -> run a fake 3D particle sphere");
+  Serial.println("  parallax     -> run a parallax starfield");
+  Serial.println("  moire        -> run moire-like shifting lines");
+  Serial.println("  morph        -> run a morphing symbol animation");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
   Serial.println("  rchar <c>    -> display one large char on rotated 16x32 view");
   Serial.println("  rchartest <ms> -> cycle through all supported rotated chars");
@@ -1632,6 +2794,180 @@ void handleCommand(String input) {
     return;
   }
 
+  if (input == "vortex") {
+    currentMode = MODE_VORTEX;
+    Serial.println("Vortex effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "lava") {
+    currentMode = MODE_LAVA;
+    Serial.println("Lava effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "meteor") {
+    seedMeteors();
+    currentMode = MODE_METEOR;
+    Serial.println("Meteor effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "storm") {
+    stormBoltLife = 0;
+    currentMode = MODE_STORM;
+    Serial.println("Storm effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "galaxy") {
+    currentMode = MODE_GALAXY;
+    Serial.println("Galaxy effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "catrun") {
+    catRunOffsetX = -12;
+    catRunFrame = 0;
+    currentMode = MODE_CATRUN;
+    Serial.println("Cat run started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "squareburst") {
+    seedSquareBursts();
+    currentMode = MODE_SQUAREBURST;
+    Serial.println("Square burst effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "smoke") {
+    currentMode = MODE_SMOKE;
+    Serial.println("Smoke effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "blobs") {
+    currentMode = MODE_BLOBS;
+    Serial.println("Blob effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "windfire") {
+    seedFire();
+    currentMode = MODE_WINDFIRE;
+    Serial.println("Wind fire effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "ripples") {
+    currentMode = MODE_RIPPLES;
+    Serial.println("Ripple effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "circuit") {
+    currentMode = MODE_CIRCUIT;
+    Serial.println("Circuit effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "radar") {
+    currentMode = MODE_RADAR;
+    Serial.println("Radar effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "stylerain") {
+    currentMode = MODE_STYLERAIN;
+    Serial.println("Stylized rain effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "neural") {
+    currentMode = MODE_NEURAL;
+    Serial.println("Neural effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "tunnel") {
+    currentMode = MODE_TUNNEL;
+    Serial.println("Tunnel effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "cube") {
+    currentMode = MODE_CUBE;
+    Serial.println("Cube effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "kaleido") {
+    currentMode = MODE_KALEIDO;
+    Serial.println("Kaleidoscope effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "spiral") {
+    currentMode = MODE_SPIRAL;
+    Serial.println("Spiral effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "interfere") {
+    currentMode = MODE_INTERFERENCE;
+    Serial.println("Interference effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "tessellate") {
+    currentMode = MODE_TESSELLATE;
+    Serial.println("Tessellation effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "beatburst") {
+    currentMode = MODE_BEATBURST;
+    Serial.println("Beat burst effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "sunrise") {
+    currentMode = MODE_SUNRISE;
+    Serial.println("Sunrise effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "pacman") {
+    currentMode = MODE_PACMAN;
+    Serial.println("Pac-Man effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "sphere") {
+    currentMode = MODE_SPHERE;
+    Serial.println("Sphere effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "parallax") {
+    currentMode = MODE_PARALLAX;
+    Serial.println("Parallax effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "moire") {
+    currentMode = MODE_MOIRE;
+    Serial.println("Moire effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "morph") {
+    currentMode = MODE_MORPH;
+    Serial.println("Morph effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
   if (input.startsWith("text ")) {
     textMessage = input.substring(5);
     if (textMessage.length() == 0) {
@@ -1916,5 +3252,145 @@ void loop() {
   if (currentMode == MODE_SUPERNOVA) {
     drawSupernovaFrame(millis());
     delay(35);
+  }
+
+  if (currentMode == MODE_VORTEX) {
+    drawVortexFrame(millis());
+    delay(20);
+  }
+
+  if (currentMode == MODE_LAVA) {
+    drawLavaFrame(millis());
+    delay(30);
+  }
+
+  if (currentMode == MODE_METEOR) {
+    drawMeteorFrame(millis());
+    delay(30);
+  }
+
+  if (currentMode == MODE_STORM) {
+    drawStormFrame(millis());
+    delay(35);
+  }
+
+  if (currentMode == MODE_GALAXY) {
+    drawGalaxyFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_CATRUN) {
+    drawCatRunFrame(millis());
+    delay(80);
+  }
+
+  if (currentMode == MODE_SQUAREBURST) {
+    drawSquareBurstFrame(millis());
+    delay(45);
+  }
+
+  if (currentMode == MODE_SMOKE) {
+    drawSmokeFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_BLOBS) {
+    drawBlobsFrame(millis());
+    delay(30);
+  }
+
+  if (currentMode == MODE_WINDFIRE) {
+    drawWindFireFrame(millis());
+    delay(35);
+  }
+
+  if (currentMode == MODE_RIPPLES) {
+    drawRipplesFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_CIRCUIT) {
+    drawCircuitFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_RADAR) {
+    drawRadarFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_STYLERAIN) {
+    drawStyleRainFrame(millis());
+    delay(35);
+  }
+
+  if (currentMode == MODE_NEURAL) {
+    drawNeuralFrame(millis());
+    delay(30);
+  }
+
+  if (currentMode == MODE_TUNNEL) {
+    drawTunnelFrame(millis());
+    delay(22);
+  }
+
+  if (currentMode == MODE_CUBE) {
+    drawCubeFrame(millis());
+    delay(35);
+  }
+
+  if (currentMode == MODE_KALEIDO) {
+    drawKaleidoFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_SPIRAL) {
+    drawSpiralFrame(millis());
+    delay(22);
+  }
+
+  if (currentMode == MODE_INTERFERENCE) {
+    drawInterferenceFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_TESSELLATE) {
+    drawTessellateFrame(millis());
+    delay(28);
+  }
+
+  if (currentMode == MODE_BEATBURST) {
+    drawBeatBurstFrame(millis());
+    delay(28);
+  }
+
+  if (currentMode == MODE_SUNRISE) {
+    drawSunriseFrame(millis());
+    delay(60);
+  }
+
+  if (currentMode == MODE_PACMAN) {
+    drawPacmanFrame(millis());
+    delay(70);
+  }
+
+  if (currentMode == MODE_SPHERE) {
+    drawSphereFrame(millis());
+    delay(30);
+  }
+
+  if (currentMode == MODE_PARALLAX) {
+    drawParallaxFrame(millis());
+    delay(22);
+  }
+
+  if (currentMode == MODE_MOIRE) {
+    drawMoireFrame(millis());
+    delay(22);
+  }
+
+  if (currentMode == MODE_MORPH) {
+    drawMorphFrame(millis());
+    delay(40);
   }
 }
