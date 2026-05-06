@@ -100,7 +100,8 @@ enum TestMode {
   MODE_SPHERE,
   MODE_PARALLAX,
   MODE_MOIRE,
-  MODE_MORPH
+  MODE_MORPH,
+  MODE_DVD
 };
 
 TestMode currentMode = MODE_HELP;
@@ -132,6 +133,11 @@ uint8_t soundbarTargets[PANEL_RES_X];
 uint8_t fluidField[PANEL_RES_Y][PANEL_RES_X];
 uint8_t fluidScratch[PANEL_RES_Y][PANEL_RES_X];
 uint32_t fluidTick = 0;
+float dvdX = 2.0f;
+float dvdY = 2.0f;
+float dvdVX = 0.45f;
+float dvdVY = 0.32f;
+uint8_t dvdHue = 0;
 const int MAX_FIREWORK_PARTICLES = 48;
 float fwX[MAX_FIREWORK_PARTICLES];
 float fwY[MAX_FIREWORK_PARTICLES];
@@ -2383,6 +2389,77 @@ void drawMorphFrame(uint32_t t) {
   }
 }
 
+void seedDvdBounce() {
+  dvdX = 2.0f;
+  dvdY = 2.0f;
+  dvdVX = 0.45f;
+  dvdVY = 0.32f;
+  dvdHue = 0;
+}
+
+void drawMiniDvdLogo(int x, int y, uint16_t color) {
+  static const uint16_t rows[] = {
+    0b111101000111110,
+    0b100011000110001,
+    0b100011000110001,
+    0b100011000110001,
+    0b100010101010001,
+    0b100010101010001,
+    0b111100010011110
+  };
+
+  for (int row = 0; row < 7; row++) {
+    for (int col = 0; col < 15; col++) {
+      if (rows[row] & (1 << (14 - col))) {
+        drawPixelMapped(x + col, y + row, color);
+      }
+    }
+  }
+}
+
+void drawDvdFrame(uint32_t t) {
+  const int logoWidth = 16;
+  const int logoHeight = 8;
+  bool bounced = false;
+
+  dvdX += dvdVX;
+  dvdY += dvdVY;
+
+  if (dvdX <= 0.0f) {
+    dvdX = 0.0f;
+    if (dvdVX < 0.0f) dvdVX = -dvdVX;
+    bounced = true;
+  } else if (dvdX >= PANEL_RES_X - logoWidth) {
+    dvdX = PANEL_RES_X - logoWidth;
+    if (dvdVX > 0.0f) dvdVX = -dvdVX;
+    bounced = true;
+  }
+
+  if (dvdY <= 0.0f) {
+    dvdY = 0.0f;
+    if (dvdVY < 0.0f) dvdVY = -dvdVY;
+    bounced = true;
+  } else if (dvdY >= PANEL_RES_Y - logoHeight) {
+    dvdY = PANEL_RES_Y - logoHeight;
+    if (dvdVY > 0.0f) dvdVY = -dvdVY;
+    bounced = true;
+  }
+
+  if (bounced) {
+    dvdHue += 43;
+  }
+
+  matrix->fillScreen(BLACK);
+
+  int x = (int)(dvdX + 0.5f);
+  int y = (int)(dvdY + 0.5f);
+  uint16_t logoColor = colorWheel(dvdHue + (uint8_t)(t / 50));
+  uint16_t glowColor = scaleColor565(logoColor, 65);
+
+  drawMiniDvdLogo(x + 1, y + 1, glowColor);
+  drawMiniDvdLogo(x, y, logoColor);
+}
+
 void drawCatRunFrame(uint32_t t) {
   for (int y = 0; y < PANEL_RES_Y; y++) {
     for (int x = 0; x < PANEL_RES_X; x++) {
@@ -2488,6 +2565,7 @@ void printHelp() {
   Serial.println("  parallax     -> run a parallax starfield");
   Serial.println("  moire        -> run moire-like shifting lines");
   Serial.println("  morph        -> run a morphing symbol animation");
+  Serial.println("  dvd          -> run a bouncing DVD logo screensaver");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
   Serial.println("  rchar <c>    -> display one large char on rotated 16x32 view");
   Serial.println("  rchartest <ms> -> cycle through all supported rotated chars");
@@ -2968,6 +3046,13 @@ void handleCommand(String input) {
     return;
   }
 
+  if (input == "dvd") {
+    seedDvdBounce();
+    currentMode = MODE_DVD;
+    Serial.println("DVD bounce started. Send 'stop' to return to command mode.");
+    return;
+  }
+
   if (input.startsWith("text ")) {
     textMessage = input.substring(5);
     if (textMessage.length() == 0) {
@@ -3391,6 +3476,11 @@ void loop() {
 
   if (currentMode == MODE_MORPH) {
     drawMorphFrame(millis());
+    delay(40);
+  }
+
+  if (currentMode == MODE_DVD) {
+    drawDvdFrame(millis());
     delay(40);
   }
 }
