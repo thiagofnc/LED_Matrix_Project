@@ -101,7 +101,12 @@ enum TestMode {
   MODE_PARALLAX,
   MODE_MOIRE,
   MODE_MORPH,
-  MODE_DVD
+  MODE_DVD,
+  MODE_TVBARS,
+  MODE_SINEWAVE,
+  MODE_PHASEBEAT,
+  MODE_LISSAJOUS,
+  MODE_HARMONICS
 };
 
 TestMode currentMode = MODE_HELP;
@@ -2145,32 +2150,59 @@ void drawTunnelFrame(uint32_t t) {
 
 void drawCubeFrame(uint32_t t) {
   const float verts[8][3] = {
-    {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},
-    {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1}
+    {-1.15f,-1.15f,-1.15f},{1.15f,-1.15f,-1.15f},{1.15f,1.15f,-1.15f},{-1.15f,1.15f,-1.15f},
+    {-1.15f,-1.15f,1.15f},{1.15f,-1.15f,1.15f},{1.15f,1.15f,1.15f},{-1.15f,1.15f,1.15f}
   };
   const int edges[12][2] = {
     {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}
   };
+  const uint8_t edgeOrder[12] = {0, 3, 1, 2, 8, 11, 9, 10, 4, 7, 5, 6};
   int pts[8][2];
-  float ay = t * 0.0017f;
-  float ax = t * 0.0011f;
+  float depth[8];
+  float ay = t * 0.00115f;
+  float ax = t * 0.00078f + 0.42f;
+  float az = t * 0.00042f;
+  float cy = cosf(ay);
+  float sy = sinf(ay);
+  float cx = cosf(ax);
+  float sx = sinf(ax);
+  float cz = cosf(az);
+  float sz = sinf(az);
   matrix->fillScreen(BLACK);
 
   for (int i = 0; i < 8; i++) {
     float x = verts[i][0];
     float y = verts[i][1];
     float z = verts[i][2];
-    float rx = x * cosf(ay) - z * sinf(ay);
-    float rz = x * sinf(ay) + z * cosf(ay);
-    float ry = y * cosf(ax) - rz * sinf(ax);
-    rz = y * sinf(ax) + rz * cosf(ax) + 3.3f;
-    pts[i][0] = (int)(16 + rx * 6.0f / rz + 0.5f);
-    pts[i][1] = (int)(8 + ry * 6.0f / rz + 0.5f);
+    float rz0 = x * sy + z * cy;
+    float rx0 = x * cy - z * sy;
+    float ry0 = y * cx - rz0 * sx;
+    float rz1 = y * sx + rz0 * cx;
+    float rx1 = rx0 * cz - ry0 * sz;
+    float ry1 = rx0 * sz + ry0 * cz;
+    float cameraZ = rz1 + 4.2f;
+    depth[i] = cameraZ;
+    pts[i][0] = (int)(15.5f + rx1 * 18.0f / cameraZ + 0.5f);
+    pts[i][1] = (int)(7.5f + ry1 * 9.2f / cameraZ + 0.5f);
   }
 
   for (int i = 0; i < 12; i++) {
-    uint16_t color = colorWheel((uint8_t)(t / 8 + i * 18));
-    drawLineMapped(pts[edges[i][0]][0], pts[edges[i][0]][1], pts[edges[i][1]][0], pts[edges[i][1]][1], color);
+    int edgeIndex = edgeOrder[i];
+    int a = edges[edgeIndex][0];
+    int b = edges[edgeIndex][1];
+    float avgDepth = (depth[a] + depth[b]) * 0.5f;
+    uint8_t brightness = (uint8_t)constrain(285.0f - avgDepth * 42.0f, 70.0f, 255.0f);
+    uint16_t color = scaleColor565(colorWheel((uint8_t)(150 + edgeIndex * 16)), brightness);
+    drawLineMapped(pts[a][0], pts[a][1], pts[b][0], pts[b][1], color);
+
+    if (brightness > 175) {
+      drawLineMapped(pts[a][0], pts[a][1] + 1, pts[b][0], pts[b][1] + 1, scaleColor565(color, 95));
+    }
+  }
+
+  for (int i = 0; i < 8; i++) {
+    uint8_t brightness = (uint8_t)constrain(310.0f - depth[i] * 48.0f, 90.0f, 255.0f);
+    drawPixelMapped(pts[i][0], pts[i][1], scaleColor565(WHITE, brightness));
   }
 }
 
@@ -2460,6 +2492,261 @@ void drawDvdFrame(uint32_t t) {
   drawMiniDvdLogo(x, y, logoColor);
 }
 
+uint16_t tvBarColor(uint8_t index) {
+  switch (index & 0x07) {
+    case 0: return matrix->color565(210, 210, 210);
+    case 1: return matrix->color565(220, 220, 50);
+    case 2: return matrix->color565(40, 210, 210);
+    case 3: return matrix->color565(40, 210, 70);
+    case 4: return matrix->color565(210, 40, 210);
+    case 5: return matrix->color565(210, 40, 40);
+    case 6: return matrix->color565(35, 35, 190);
+    default: return matrix->color565(90, 90, 90);
+  }
+}
+
+uint8_t tvNoise(int x, int y, uint32_t frame) {
+  uint32_t n = (uint32_t)x * 37UL + (uint32_t)y * 73UL + frame * 151UL;
+  n ^= n << 7;
+  n ^= n >> 9;
+  n *= 23UL;
+  return (uint8_t)n;
+}
+
+void drawTvBarsFrame(uint32_t t) {
+  uint32_t frame = t / 30;
+  int topDrift = (int)(t / 210);
+  int tearY = 4 + (int)((sinf(t * 0.0021f) + 1.0f) * 3.0f);
+  int tearShift = (int)(sinf(t * 0.005f) * 4.0f);
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    int rowJitter = (int)(sinf(y * 0.9f + t * 0.004f) * 1.6f);
+
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      int sx = x + rowJitter + topDrift;
+      if (y >= tearY && y <= tearY + 1) {
+        sx += tearShift;
+      }
+
+      uint16_t color = BLACK;
+
+      if (y < 9) {
+        uint8_t bar = (uint8_t)(((sx % PANEL_RES_X + PANEL_RES_X) % PANEL_RES_X) / 4);
+        color = tvBarColor(bar);
+        uint8_t scan = (uint8_t)(210 + ((y & 1) ? 0 : 35));
+        color = scaleColor565(color, scan);
+      } else if (y < 11) {
+        int bandX = (x + (int)(frame / 2)) % PANEL_RES_X;
+        if (bandX < 4) {
+          color = CYAN;
+        } else if (bandX < 8) {
+          color = YELLOW;
+        } else if (bandX > 26) {
+          color = BLUE;
+        } else {
+          color = matrix->color565(230, 230, 230);
+        }
+      } else if (y < 12) {
+        color = ((x + (int)frame) % 11 < 7) ? matrix->color565(0, 90, 18) : matrix->color565(20, 20, 20);
+      } else {
+        uint8_t n = tvNoise(x, y, frame);
+        if (n > 225) {
+          color = WHITE;
+        } else if (n > 170) {
+          color = matrix->color565(95, 95, 95);
+        } else if (n < 18) {
+          color = tvBarColor((uint8_t)(x + y + frame));
+        } else {
+          color = BLACK;
+        }
+      }
+
+      if (tvNoise(x, y, frame / 2) > 250) {
+        color = WHITE;
+      }
+
+      drawPixelMapped(x, y, color);
+    }
+  }
+
+  int pulseX = (int)((t / 45) % (PANEL_RES_X + 8)) - 4;
+  for (int x = 0; x < 10; x++) {
+    int px = pulseX + x;
+    if (px >= 0 && px < PANEL_RES_X) {
+      drawPixelMapped(px, 10, scaleColor565(WHITE, (uint8_t)(90 + x * 13)));
+    }
+  }
+}
+
+void drawSineWaveFrame(uint32_t t) {
+  float time = t * 0.0040f;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float shimmer = sinf(x * 0.38f + y * 0.72f + time) + cosf(x * 0.20f - y * 0.55f - time * 0.7f);
+      uint8_t hue = (uint8_t)(x * 5 + y * 12 + t / 22);
+      uint8_t brightness = (uint8_t)constrain(16.0f + shimmer * 9.0f, 4.0f, 34.0f);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), brightness));
+    }
+  }
+
+  for (int wave = 0; wave < 3; wave++) {
+    float phase = time * (0.82f + wave * 0.18f) + wave * 2.1f;
+    float amplitude = 4.5f - wave * 0.75f;
+    float frequency = 0.42f + wave * 0.11f;
+    uint8_t baseHue = (uint8_t)(t / 12 + wave * 72);
+    int lastY = 0;
+    bool hasLast = false;
+
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float yFloat = 7.5f + sinf(x * frequency + phase) * amplitude;
+      yFloat += sinf(x * 0.18f - time * 1.3f + wave) * 0.9f;
+      int y = (int)(yFloat + 0.5f);
+      uint16_t color = colorWheel((uint8_t)(baseHue + x * 4));
+      uint16_t glow = scaleColor565(color, 80);
+
+      drawPixelMapped(x, y - 1, glow);
+      drawPixelMapped(x, y + 1, glow);
+      drawPixelMapped(x, y, color);
+      if (((x + wave * 3 + (int)(t / 80)) % 9) == 0) {
+        drawPixelMapped(x, y, WHITE);
+      }
+
+      if (hasLast) {
+        drawLineMapped(x - 1, lastY, x, y, color);
+      }
+
+      lastY = y;
+      hasLast = true;
+    }
+  }
+}
+
+void drawPhaseBeatFrame(uint32_t t) {
+  float time = t * 0.0036f;
+  float drift = sinf(time * 0.23f) * 2.7f;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float wash = sinf(x * 0.20f + time) * cosf(y * 0.55f - time * 0.65f);
+      uint8_t hue = (uint8_t)(160 + x * 3 + y * 9 + t / 35);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), (uint8_t)(8 + 18 * (0.5f + 0.5f * wash))));
+    }
+  }
+
+  int lastA = 0;
+  int lastB = 0;
+  bool hasLast = false;
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    float waveA = sinf(x * 0.48f + time);
+    float waveB = sinf(x * 0.48f + time + drift);
+    int yA = (int)(7.5f + waveA * 4.8f + 0.5f);
+    int yB = (int)(7.5f + waveB * 4.8f + 0.5f);
+    uint16_t colorA = colorWheel((uint8_t)(t / 11 + x * 5));
+    uint16_t colorB = colorWheel((uint8_t)(96 + t / 13 + x * 5));
+
+    drawPixelMapped(x, yA, colorA);
+    drawPixelMapped(x, yA - 1, scaleColor565(colorA, 70));
+    drawPixelMapped(x, yB, colorB);
+    drawPixelMapped(x, yB + 1, scaleColor565(colorB, 70));
+
+    if (abs(yA - yB) <= 1) {
+      drawSoftGlow(x, (yA + yB) / 2, 1.6f, WHITE, 210);
+      drawPixelMapped(x, (yA + yB) / 2, WHITE);
+    }
+
+    if (hasLast) {
+      drawLineMapped(x - 1, lastA, x, yA, colorA);
+      drawLineMapped(x - 1, lastB, x, yB, colorB);
+    }
+
+    lastA = yA;
+    lastB = yB;
+    hasLast = true;
+  }
+}
+
+void drawLissajousFrame(uint32_t t) {
+  float time = t * 0.0028f;
+  float ratioDrift = 0.35f * sinf(time * 0.31f);
+  matrix->fillScreen(BLACK);
+
+  for (int x = 0; x < PANEL_RES_X; x += 4) {
+    drawPixelMapped(x, PANEL_RES_Y / 2, matrix->color565(6, 10, 18));
+  }
+  for (int y = 0; y < PANEL_RES_Y; y += 4) {
+    drawPixelMapped(PANEL_RES_X / 2, y, matrix->color565(6, 10, 18));
+  }
+
+  int lastX = 0;
+  int lastY = 0;
+  bool hasLast = false;
+  for (int i = 0; i < 96; i++) {
+    float p = i * 0.131f;
+    float xWave = sinf(p * (2.0f + ratioDrift) + time * 1.35f);
+    float yWave = sinf(p * 3.0f + time * 0.93f + sinf(time * 0.19f) * 1.4f);
+    int x = (int)(15.5f + xWave * 13.5f + 0.5f);
+    int y = (int)(7.5f + yWave * 6.3f + 0.5f);
+    uint16_t color = colorWheel((uint8_t)(i * 3 + t / 18));
+
+    drawPixelMapped(x, y, color);
+    if ((i & 0x07) == 0) {
+      drawPixelMapped(x + 1, y, scaleColor565(color, 100));
+      drawPixelMapped(x, y + 1, scaleColor565(color, 100));
+    }
+
+    if (hasLast) {
+      drawLineMapped(lastX, lastY, x, y, scaleColor565(color, 190));
+    }
+
+    lastX = x;
+    lastY = y;
+    hasLast = true;
+  }
+}
+
+void drawHarmonicsFrame(uint32_t t) {
+  float time = t * 0.0032f;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float carrier = sinf(x * 0.28f + time * 0.7f) + sinf(y * 0.62f - time);
+      uint8_t hue = (uint8_t)(x * 7 + y * 11 + t / 28);
+      uint8_t brightness = (uint8_t)constrain(14.0f + carrier * 8.0f, 3.0f, 32.0f);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), brightness));
+    }
+  }
+
+  for (int harmonic = 1; harmonic <= 4; harmonic++) {
+    int lastY = 0;
+    bool hasLast = false;
+    uint8_t baseHue = (uint8_t)(harmonic * 48 + t / 14);
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float sample = 0.0f;
+      for (int n = 1; n <= harmonic; n++) {
+        sample += sinf(x * 0.30f * n + time * (1.15f + n * 0.13f)) / n;
+      }
+      sample /= 1.9f;
+      int center = 2 + harmonic * 3;
+      int y = (int)(center + sample * 2.2f + 0.5f);
+      uint16_t color = colorWheel((uint8_t)(baseHue + x * 3));
+
+      drawPixelMapped(x, y, color);
+      if (harmonic == 4) {
+        drawPixelMapped(x, y - 1, scaleColor565(color, 80));
+        drawPixelMapped(x, y + 1, scaleColor565(color, 80));
+      }
+
+      if (hasLast) {
+        drawLineMapped(x - 1, lastY, x, y, color);
+      }
+
+      lastY = y;
+      hasLast = true;
+    }
+  }
+}
+
 void drawCatRunFrame(uint32_t t) {
   for (int y = 0; y < PANEL_RES_Y; y++) {
     for (int x = 0; x < PANEL_RES_X; x++) {
@@ -2566,6 +2853,11 @@ void printHelp() {
   Serial.println("  moire        -> run moire-like shifting lines");
   Serial.println("  morph        -> run a morphing symbol animation");
   Serial.println("  dvd          -> run a bouncing DVD logo screensaver");
+  Serial.println("  tvbars       -> run animated TV color bars with static");
+  Serial.println("  sinewave     -> run layered colorful sine waves");
+  Serial.println("  phasebeat    -> run two drifting waves with beat highlights");
+  Serial.println("  lissajous    -> run a colorful Lissajous curve");
+  Serial.println("  harmonics    -> run stacked harmonic wave traces");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
   Serial.println("  rchar <c>    -> display one large char on rotated 16x32 view");
   Serial.println("  rchartest <ms> -> cycle through all supported rotated chars");
@@ -3053,6 +3345,36 @@ void handleCommand(String input) {
     return;
   }
 
+  if (input == "tvbars") {
+    currentMode = MODE_TVBARS;
+    Serial.println("TV color bars started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "sinewave") {
+    currentMode = MODE_SINEWAVE;
+    Serial.println("Colorful sine wave started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "phasebeat") {
+    currentMode = MODE_PHASEBEAT;
+    Serial.println("Phase beat waves started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "lissajous") {
+    currentMode = MODE_LISSAJOUS;
+    Serial.println("Lissajous curve started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "harmonics") {
+    currentMode = MODE_HARMONICS;
+    Serial.println("Harmonic wave stack started. Send 'stop' to return to command mode.");
+    return;
+  }
+
   if (input.startsWith("text ")) {
     textMessage = input.substring(5);
     if (textMessage.length() == 0) {
@@ -3482,5 +3804,30 @@ void loop() {
   if (currentMode == MODE_DVD) {
     drawDvdFrame(millis());
     delay(40);
+  }
+
+  if (currentMode == MODE_TVBARS) {
+    drawTvBarsFrame(millis());
+    delay(30);
+  }
+
+  if (currentMode == MODE_SINEWAVE) {
+    drawSineWaveFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_PHASEBEAT) {
+    drawPhaseBeatFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_LISSAJOUS) {
+    drawLissajousFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_HARMONICS) {
+    drawHarmonicsFrame(millis());
+    delay(25);
   }
 }
