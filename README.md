@@ -310,7 +310,7 @@ What they do:
 - `sunrise` runs a sunrise gradient over silhouettes
 - `pacman` runs Pac-Man and three spaced ghosts through a pellet-filled maze; eaten pellets remain cleared until the round resets
 - `flappy` starts Flappy Bird; send any Serial Monitor input to jump, or send `c` to exit back to the command menu
-- `pong` runs neon auto-Pong; send `c` to return to the command menu
+- `pong` runs neon auto-Pong around a compact live clock centered on the court; send `c` to return to the command menu
 - `breakout [1-10]` starts playable Breakout at the selected speed (default `5`); send `a` or `d` to move the paddle and `c` to return to the command menu
 - `snake` starts playable Snake; steer with `w`, `a`, `s`, and `d`, or send `c` to exit
 - `invaders` starts playable Space Invaders; use `a`/`d` to move, any other input to fire, and `c` to exit

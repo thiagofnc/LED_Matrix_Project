@@ -245,6 +245,43 @@ void resetPongGame() {
   pongLastFrame = millis();
 }
 
+void drawPongClockDigit(int x, int y, char digit, uint16_t color) {
+  static const uint8_t digitRows[10][5] = {
+    { 0b111, 0b101, 0b101, 0b101, 0b111 },
+    { 0b010, 0b110, 0b010, 0b010, 0b111 },
+    { 0b111, 0b001, 0b111, 0b100, 0b111 },
+    { 0b111, 0b001, 0b111, 0b001, 0b111 },
+    { 0b101, 0b101, 0b111, 0b001, 0b001 },
+    { 0b111, 0b100, 0b111, 0b001, 0b111 },
+    { 0b111, 0b100, 0b111, 0b101, 0b111 },
+    { 0b111, 0b001, 0b010, 0b010, 0b010 },
+    { 0b111, 0b101, 0b111, 0b101, 0b111 },
+    { 0b111, 0b101, 0b111, 0b001, 0b111 }
+  };
+
+  if (digit < '0' || digit > '9') return;
+  uint8_t index = digit - '0';
+  for (uint8_t row = 0; row < 5; row++) {
+    for (uint8_t col = 0; col < 3; col++) {
+      if (digitRows[index][row] & (1 << (2 - col))) drawPixelMapped(x + col, y + row, color);
+    }
+  }
+}
+
+void drawPongClock(uint32_t t) {
+  String timeText = getCurrentClockText();
+  drawPongClockDigit(7, 5, timeText[0], WHITE);
+  drawPongClockDigit(11, 5, timeText[1], WHITE);
+  drawPongClockDigit(18, 5, timeText[3], WHITE);
+  drawPongClockDigit(22, 5, timeText[4], WHITE);
+
+  // A gently blinking colon makes the clock feel alive without distracting.
+  if ((t / 500) % 2 == 0) {
+    drawPixelMapped(16, 6, WHITE);
+    drawPixelMapped(16, 8, WHITE);
+  }
+}
+
 void drawPongFrame(uint32_t t) {
   if (t - pongLastFrame < 45) return;
   pongLastFrame = t;
@@ -256,6 +293,9 @@ void drawPongFrame(uint32_t t) {
   pongX += pongVX;
   pongY += pongVY;
   if (pongY <= 0 || pongY >= PANEL_RES_Y - 1) pongVY = -pongVY;
+  pongY = constrain(pongY, 0.0f, (float)PANEL_RES_Y - 1.0f);
+  pongLeftY = constrain(pongLeftY, 0.0f, (float)PANEL_RES_Y - 5.0f);
+  pongRightY = constrain(pongRightY, 0.0f, (float)PANEL_RES_Y - 5.0f);
   if (pongX <= 2 && pongX >= 1 && pongVX < 0 && pongY >= pongLeftY && pongY <= pongLeftY + 4) pongVX = -pongVX;
   if (pongX >= PANEL_RES_X - 3 && pongX <= PANEL_RES_X - 2 && pongVX > 0 && pongY >= pongRightY && pongY <= pongRightY + 4) pongVX = -pongVX;
   if (pongX < 0 || pongX >= PANEL_RES_X) resetPongGame();
@@ -264,6 +304,7 @@ void drawPongFrame(uint32_t t) {
     drawPixelMapped(1, (int)pongLeftY + i, CYAN);
     drawPixelMapped(PANEL_RES_X - 2, (int)pongRightY + i, MAGENTA);
   }
+  drawPongClock(t);
   drawPixelMapped((int)pongX, (int)pongY, WHITE);
 }
 
