@@ -72,6 +72,12 @@ enum TestMode {
   MODE_FLUID,
   MODE_FIREWORKS,
   MODE_PLASMA_CLOCK,
+  MODE_RAIN_CLOCK,
+  MODE_STAR_CLOCK,
+  MODE_AQUARIUM_CLOCK,
+  MODE_MATRIX_CLOCK,
+  MODE_TETRIS_CLOCK,
+  MODE_ORBIT_CLOCK,
   MODE_SUPERNOVA,
   MODE_VORTEX,
   MODE_LAVA,
@@ -121,6 +127,9 @@ enum TestMode {
   MODE_PHASEBEAT,
   MODE_LISSAJOUS,
   MODE_HARMONICS,
+  MODE_SILK,
+  MODE_SILK_CLOCK,
+  MODE_DEEPSEA,
   MODE_SCROLL_TEXT,
   MODE_DRAW_TEXT,
   MODE_EMOJI
@@ -506,6 +515,36 @@ void loop() {
     delay(20);
   }
 
+  if (currentMode == MODE_RAIN_CLOCK) {
+    drawRainClockFrame(millis());
+    delay(45);
+  }
+
+  if (currentMode == MODE_STAR_CLOCK) {
+    drawStarClockFrame(millis());
+    delay(45);
+  }
+
+  if (currentMode == MODE_AQUARIUM_CLOCK) {
+    drawAquariumClockFrame(millis());
+    delay(55);
+  }
+
+  if (currentMode == MODE_MATRIX_CLOCK) {
+    drawMatrixClockFrame(millis());
+    delay(55);
+  }
+
+  if (currentMode == MODE_TETRIS_CLOCK) {
+    drawTetrisClockFrame(millis());
+    delay(80);
+  }
+
+  if (currentMode == MODE_ORBIT_CLOCK) {
+    drawOrbitClockFrame(millis());
+    delay(35);
+  }
+
   if (currentMode == MODE_TWINKLE) {
     drawTwinkleFrame(millis());
     delay(30);
@@ -768,6 +807,19 @@ void loop() {
 
   if (currentMode == MODE_HARMONICS) {
     drawHarmonicsFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_SILK) {
+    drawSilkFrame(millis());
+    delay(25);
+  }
+  if (currentMode == MODE_SILK_CLOCK) {
+    drawSilkClockFrame(millis());
+    delay(25);
+  }
+  if (currentMode == MODE_DEEPSEA) {
+    drawDeepSeaFrame(millis());
     delay(25);
   }
 

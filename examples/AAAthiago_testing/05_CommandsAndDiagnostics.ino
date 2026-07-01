@@ -19,6 +19,12 @@ void printHelp() {
   Serial.println("  fire         -> run animated fire effect");
   Serial.println("  plasma       -> run colorful plasma effect");
   Serial.println("  pclock       -> plasma with the current clock time");
+  Serial.println("  rainclock    -> colorful rain clock wallpaper");
+  Serial.println("  starclock    -> drifting stars and comet clock wallpaper");
+  Serial.println("  aquarium     -> fish and bubbles clock wallpaper");
+  Serial.println("  matrixclock  -> green digital-rain clock wallpaper");
+  Serial.println("  tetrisclock  -> falling-block clock wallpaper");
+  Serial.println("  orbitclock   -> orbiting-particle clock wallpaper");
   Serial.println("  settime <hh:mm[:ss]> -> set the device clock manually");
   Serial.println("  twinkle      -> run neon starfield twinkle");
   Serial.println("  soundbar     -> run rainbow equalizer bars");
@@ -73,6 +79,9 @@ void printHelp() {
   Serial.println("  phasebeat    -> run two drifting waves with beat highlights");
   Serial.println("  lissajous    -> run a colorful Lissajous curve");
   Serial.println("  harmonics    -> run stacked harmonic wave traces");
+  Serial.println("  silk         -> run flowing iridescent silk wallpaper");
+  Serial.println("  silkclock    -> iridescent silk with a clock overlay");
+  Serial.println("  deepsea      -> bioluminescent deep-sea clock wallpaper");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
   Serial.println("  scroll <msg> -> continuously scroll text from right to left");
   Serial.println("  draw <msg>   -> draw each character one pixel at a time");
@@ -330,6 +339,42 @@ void handleCommand(String input) {
     Serial.print("Plasma clock started at ");
     Serial.print(getCurrentClockText());
     Serial.println(". Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "rainclock") {
+    currentMode = MODE_RAIN_CLOCK;
+    Serial.println("Rain clock started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "starclock") {
+    currentMode = MODE_STAR_CLOCK;
+    Serial.println("Star clock started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "aquarium") {
+    currentMode = MODE_AQUARIUM_CLOCK;
+    Serial.println("Aquarium clock started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "matrixclock") {
+    currentMode = MODE_MATRIX_CLOCK;
+    Serial.println("Matrix clock started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "tetrisclock") {
+    currentMode = MODE_TETRIS_CLOCK;
+    Serial.println("Tetris clock started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "orbitclock") {
+    currentMode = MODE_ORBIT_CLOCK;
+    Serial.println("Orbit clock started. Send 'stop' to return to command mode.");
     return;
   }
 
@@ -719,6 +764,24 @@ void handleCommand(String input) {
   if (input == "harmonics") {
     currentMode = MODE_HARMONICS;
     Serial.println("Harmonic wave stack started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "silk") {
+    currentMode = MODE_SILK;
+    Serial.println("Iridescent silk wallpaper started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "silkclock") {
+    currentMode = MODE_SILK_CLOCK;
+    Serial.println("Iridescent silk clock started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "deepsea") {
+    currentMode = MODE_DEEPSEA;
+    Serial.println("Deep-sea clock wallpaper started. Send 'stop' to return to command mode.");
     return;
   }
 

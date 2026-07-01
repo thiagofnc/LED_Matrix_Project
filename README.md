@@ -212,6 +212,12 @@ Lowercase letters are converted to uppercase.
 ### Clock Commands
 
 - `pclock`
+- `rainclock`
+- `starclock`
+- `aquarium`
+- `matrixclock`
+- `tetrisclock`
+- `orbitclock`
 - `settime <hh:mm>`
 - `settime <hh:mm:ss>`
 
