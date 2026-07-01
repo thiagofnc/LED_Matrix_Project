@@ -100,13 +100,24 @@ enum TestMode {
   MODE_SPHERE,
   MODE_PARALLAX,
   MODE_MOIRE,
+  MODE_HYPNOSIS,
+  MODE_CAFEWALL,
+  MODE_PINWHEEL,
+  MODE_PETALWARP,
+  MODE_TWISTSQUARE,
+  MODE_EVENTHORIZON,
   MODE_MORPH,
   MODE_DVD,
   MODE_TVBARS,
+  MODE_TVSTATIC,
   MODE_SINEWAVE,
+  MODE_NOISEFLOW,
   MODE_PHASEBEAT,
   MODE_LISSAJOUS,
-  MODE_HARMONICS
+  MODE_HARMONICS,
+  MODE_SCROLL_TEXT,
+  MODE_DRAW_TEXT,
+  MODE_EMOJI
 };
 
 TestMode currentMode = MODE_HELP;
@@ -123,6 +134,19 @@ bool lifeCurrent[PANEL_RES_Y][PANEL_RES_X];
 bool lifeNext[PANEL_RES_Y][PANEL_RES_X];
 uint16_t lifeGeneration = 0;
 String textMessage = "HELLO";
+int scrollTextX = PANEL_RES_X;
+uint32_t scrollTextLastStep = 0;
+size_t drawTextCharIndex = 0;
+uint8_t drawTextPixelIndex = 0;
+uint32_t drawTextLastStep = 0;
+uint8_t emojiIndex = 0;
+uint16_t emojiDelayMs = 1000;
+uint32_t emojiLastChange = 0;
+const uint8_t PACMAN_ROUTE_LENGTH = 68;
+bool pacmanPellets[PACMAN_ROUTE_LENGTH];
+uint8_t pacmanRouteIndex = 0;
+uint32_t pacmanLastStep = 0;
+uint32_t pacmanRoundCompleteAt = 0;
 String clockText = "12:34";
 String lastClockText = "";
 char rotatedChar = 'A';
@@ -143,6 +167,7 @@ float dvdY = 2.0f;
 float dvdVX = 0.45f;
 float dvdVY = 0.32f;
 uint8_t dvdHue = 0;
+uint8_t noiseFlowAmount = 5;
 const int MAX_FIREWORK_PARTICLES = 48;
 float fwX[MAX_FIREWORK_PARTICLES];
 float fwY[MAX_FIREWORK_PARTICLES];
@@ -684,6 +709,113 @@ void showTextMessage(const String& message) {
   }
 
   drawMappedText(startX, startY, message, WHITE, scale);
+}
+
+void drawScrollTextFrame(uint32_t now) {
+  if (now - scrollTextLastStep < 55) return;
+  scrollTextLastStep = now;
+
+  matrix->fillScreen(BLACK);
+  int startY = (PANEL_RES_Y - 7) / 2;
+  drawMappedText(scrollTextX, startY, textMessage, colorWheel((uint8_t)(now / 18)));
+
+  scrollTextX--;
+  int textWidth = (int)textMessage.length() * 6 - 1;
+  if (scrollTextX < -textWidth) scrollTextX = PANEL_RES_X;
+}
+
+void drawTextWritingFrame(uint32_t now) {
+  if (now - drawTextLastStep < 45) return;
+  drawTextLastStep = now;
+
+  if (textMessage.length() == 0) textMessage = " ";
+  char c = textMessage[drawTextCharIndex];
+  const uint8_t* rows = getGlyphRows(c);
+  const uint8_t scale = 2;
+  const int startX = (PANEL_RES_X - 5 * scale) / 2;
+  const int startY = (PANEL_RES_Y - 7 * scale) / 2;
+
+  if (drawTextPixelIndex == 0) matrix->fillScreen(BLACK);
+
+  int scanIndex = drawTextPixelIndex;
+  int row = scanIndex / 5;
+  int col = scanIndex % 5;
+  if (row < 7 && (rows[row] & (1 << (4 - col)))) {
+    uint16_t color = colorWheel((uint8_t)(drawTextCharIndex * 47 + scanIndex * 5));
+    for (int sy = 0; sy < scale; sy++) {
+      for (int sx = 0; sx < scale; sx++) {
+        drawPixelMapped(startX + col * scale + sx, startY + row * scale + sy, color);
+      }
+    }
+  }
+
+  drawTextPixelIndex++;
+  if (drawTextPixelIndex >= 35) {
+    drawTextPixelIndex = 0;
+    drawTextCharIndex = (drawTextCharIndex + 1) % textMessage.length();
+  }
+}
+
+void drawEmojiFace(uint8_t expression) {
+  const int cx = PANEL_RES_X / 2;
+  const int cy = PANEL_RES_Y / 2;
+  uint16_t yellow = matrix->color565(255, 205, 20);
+
+  for (int y = -7; y <= 7; y++) {
+    for (int x = -7; x <= 7; x++) {
+      if (x * x + y * y <= 49) drawPixelMapped(cx + x, cy + y, yellow);
+    }
+  }
+
+  drawPixelMapped(cx - 3, cy - 2, BLACK);
+  if (expression == 1) {
+    drawPixelMapped(cx + 2, cy - 2, BLACK);
+    drawPixelMapped(cx + 3, cy - 2, BLACK);
+  } else {
+    drawPixelMapped(cx + 3, cy - 2, BLACK);
+  }
+
+  if (expression == 2) {
+    drawPixelMapped(cx, cy + 2, BLACK);
+    drawPixelMapped(cx - 1, cy + 3, BLACK);
+    drawPixelMapped(cx, cy + 3, BLACK);
+    drawPixelMapped(cx + 1, cy + 3, BLACK);
+    drawPixelMapped(cx, cy + 4, BLACK);
+  } else {
+    drawPixelMapped(cx - 3, cy + 2, BLACK);
+    drawPixelMapped(cx - 2, cy + 3, BLACK);
+    drawPixelMapped(cx - 1, cy + 4, BLACK);
+    drawPixelMapped(cx, cy + 4, BLACK);
+    drawPixelMapped(cx + 1, cy + 4, BLACK);
+    drawPixelMapped(cx + 2, cy + 3, BLACK);
+    drawPixelMapped(cx + 3, cy + 2, BLACK);
+  }
+}
+
+void drawHeartEmoji() {
+  static const uint16_t heartRows[12] = {
+    0x0000, 0x0C60, 0x1EF0, 0x3FF8, 0x3FF8, 0x1FF0,
+    0x0FE0, 0x07C0, 0x0380, 0x0100, 0x0000, 0x0000
+  };
+  uint16_t red = matrix->color565(255, 25, 70);
+  int startX = (PANEL_RES_X - 14) / 2;
+  int startY = 2;
+  for (int y = 0; y < 12; y++) {
+    for (int x = 0; x < 14; x++) {
+      if (heartRows[y] & (1 << (13 - x))) drawPixelMapped(startX + x, startY + y, red);
+    }
+  }
+}
+
+void drawEmojiFrame(uint32_t now) {
+  if (emojiLastChange != 0 && now - emojiLastChange < emojiDelayMs) return;
+  emojiLastChange = now;
+  matrix->fillScreen(BLACK);
+
+  if (emojiIndex == 1) drawHeartEmoji();
+  else drawEmojiFace(emojiIndex == 2 ? 1 : (emojiIndex == 3 ? 2 : 0));
+
+  emojiIndex = (emojiIndex + 1) % 4;
 }
 
 void showRotatedSingleChar(char c) {
@@ -2311,34 +2443,168 @@ void drawSunriseFrame(uint32_t t) {
   }
 }
 
-void drawPacmanFrame(uint32_t t) {
-  int pacX = (int)((t / 90) % (PANEL_RES_X + 10)) - 5;
-  int ghostBase = pacX - 10;
-  int y = 8;
-  matrix->fillScreen(BLACK);
-  for (int i = 0; i < PANEL_RES_X; i += 4) {
-    drawPixelMapped(i, y, matrix->color565(255, 220, 120));
+void getPacmanRoutePoint(uint8_t index, int& x, int& y, uint8_t& direction) {
+  index %= PACMAN_ROUTE_LENGTH;
+  if (index < 26) {
+    x = 3 + index;
+    y = 3;
+    direction = 0; // right
+  } else if (index < 35) {
+    x = 28;
+    y = 4 + (index - 26);
+    direction = 1; // down
+  } else if (index < 60) {
+    x = 27 - (index - 35);
+    y = 12;
+    direction = 2; // left
+  } else {
+    x = 3;
+    y = 11 - (index - 60);
+    direction = 3; // up
   }
-  float mouth = fabsf(sinf(t * 0.01f));
+}
+
+void resetPacmanGame() {
+  for (uint8_t i = 0; i < PACMAN_ROUTE_LENGTH; i++) {
+    pacmanPellets[i] = (i % 4) == 2;
+  }
+  pacmanRouteIndex = 0;
+  pacmanLastStep = 0;
+  pacmanRoundCompleteAt = 0;
+}
+
+void drawPacmanMaze() {
+  uint16_t wall = matrix->color565(20, 45, 255);
+  uint16_t edge = matrix->color565(0, 150, 255);
+
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    drawPixelMapped(x, 0, wall);
+    drawPixelMapped(x, PANEL_RES_Y - 1, wall);
+  }
+  for (int y = 1; y < PANEL_RES_Y - 1; y++) {
+    drawPixelMapped(0, y, wall);
+    drawPixelMapped(PANEL_RES_X - 1, y, wall);
+  }
+
+  // Compact inner maze and ghost house, leaving a clear loop around it.
+  for (int x = 6; x <= 12; x++) {
+    drawPixelMapped(x, 6, wall);
+    drawPixelMapped(x, 9, wall);
+  }
+  for (int x = 19; x <= 25; x++) {
+    drawPixelMapped(x, 6, wall);
+    drawPixelMapped(x, 9, wall);
+  }
+  for (int x = 14; x <= 17; x++) {
+    drawPixelMapped(x, 7, edge);
+    drawPixelMapped(x, 9, wall);
+  }
+  drawPixelMapped(13, 8, wall);
+  drawPixelMapped(18, 8, wall);
+}
+
+void drawPacmanSprite(int x, int y, uint8_t direction, bool mouthOpen) {
+  uint16_t yellow = matrix->color565(255, 225, 0);
   for (int oy = -2; oy <= 2; oy++) {
     for (int ox = -2; ox <= 2; ox++) {
       if (ox * ox + oy * oy > 6) continue;
-      if (ox > 0 && fabsf((float)oy) < mouth * 2.5f) continue;
-      drawPixelMapped(pacX + ox, y + oy, matrix->color565(255, 230, 0));
+
+      int forward = 0;
+      int side = 0;
+      if (direction == 0) { forward = ox;  side = oy; }
+      if (direction == 1) { forward = oy;  side = ox; }
+      if (direction == 2) { forward = -ox; side = oy; }
+      if (direction == 3) { forward = -oy; side = ox; }
+      if (mouthOpen && forward > 0 && abs(side) <= forward) continue;
+      drawPixelMapped(x + ox, y + oy, yellow);
     }
   }
-  uint16_t ghostColors[3] = {matrix->color565(255, 0, 0), matrix->color565(255, 120, 220), matrix->color565(0, 255, 255)};
-  for (int g = 0; g < 3; g++) {
-    int gx = ghostBase - g * 5;
-    for (int oy = -2; oy <= 2; oy++) {
-      for (int ox = -2; ox <= 2; ox++) {
-        if (oy == 2 && ((ox + g) & 1)) continue;
-        if (ox * ox + oy * oy > 7) continue;
-        drawPixelMapped(gx + ox, y + oy, ghostColors[g]);
+
+  // Rotate the eye with Pac-Man so the sprite faces its direction of travel.
+  int eyeX = x;
+  int eyeY = y;
+  if (direction == 0) { eyeX = x;     eyeY = y - 1; }
+  if (direction == 1) { eyeX = x + 1; eyeY = y; }
+  if (direction == 2) { eyeX = x;     eyeY = y - 1; }
+  if (direction == 3) { eyeX = x - 1; eyeY = y; }
+  drawPixelMapped(eyeX, eyeY, BLACK);
+}
+
+void drawGhostSprite(int x, int y, uint16_t color, uint8_t direction, uint8_t phase) {
+  // Rounded 6x5 dome with a scalloped, animated skirt.
+  for (int oy = -2; oy <= 2; oy++) {
+    for (int ox = -3; ox <= 2; ox++) {
+      bool body = false;
+      if (oy == -2) body = ox >= -2 && ox <= 1;
+      else if (oy < 2) body = true;
+      else body = ((ox + phase) & 1) == 0;
+      if (body) drawPixelMapped(x + ox, y + oy, color);
+    }
+  }
+
+  int pupilOffsetX = direction == 0 ? 1 : 0;
+  int pupilOffsetY = direction == 1 ? 1 : 0;
+  for (int ey = -1; ey <= 0; ey++) {
+    drawPixelMapped(x - 2, y + ey, WHITE);
+    drawPixelMapped(x - 1, y + ey, WHITE);
+    drawPixelMapped(x, y + ey, WHITE);
+    drawPixelMapped(x + 1, y + ey, WHITE);
+  }
+  uint16_t pupil = matrix->color565(20, 40, 180);
+  drawPixelMapped(x - 2 + pupilOffsetX, y - 1 + pupilOffsetY, pupil);
+  drawPixelMapped(x + pupilOffsetX, y - 1 + pupilOffsetY, pupil);
+}
+
+void drawPacmanFrame(uint32_t t) {
+  if (pacmanRoundCompleteAt != 0 && t - pacmanRoundCompleteAt >= 900) {
+    resetPacmanGame();
+    pacmanLastStep = t;
+  }
+
+  if (pacmanRoundCompleteAt == 0 && (pacmanLastStep == 0 || t - pacmanLastStep >= 120)) {
+    pacmanLastStep = t;
+    pacmanRouteIndex = (pacmanRouteIndex + 1) % PACMAN_ROUTE_LENGTH;
+    pacmanPellets[pacmanRouteIndex] = false;
+
+    bool pelletsRemain = false;
+    for (uint8_t i = 0; i < PACMAN_ROUTE_LENGTH; i++) {
+      if (pacmanPellets[i]) {
+        pelletsRemain = true;
+        break;
       }
     }
-    drawPixelMapped(gx - 1, y - 1, WHITE);
-    drawPixelMapped(gx + 1, y - 1, WHITE);
+    if (!pelletsRemain) pacmanRoundCompleteAt = t;
+  }
+
+  matrix->fillScreen(BLACK);
+  drawPacmanMaze();
+
+  uint16_t pelletColor = matrix->color565(255, 190, 120);
+  for (uint8_t i = 0; i < PACMAN_ROUTE_LENGTH; i++) {
+    if (!pacmanPellets[i]) continue;
+    int pelletX, pelletY;
+    uint8_t pelletDirection;
+    getPacmanRoutePoint(i, pelletX, pelletY, pelletDirection);
+    drawPixelMapped(pelletX, pelletY, pelletColor);
+  }
+
+  int pacX, pacY;
+  uint8_t pacDirection;
+  getPacmanRoutePoint(pacmanRouteIndex, pacX, pacY, pacDirection);
+  drawPacmanSprite(pacX, pacY, pacDirection, ((t / 120) & 1) == 0);
+
+  const uint8_t ghostSpacing = 14; // 6px sprites plus at least one blank pixel.
+  uint16_t ghostColors[3] = {
+    matrix->color565(255, 20, 20),
+    matrix->color565(255, 105, 190),
+    matrix->color565(20, 230, 255)
+  };
+  for (uint8_t g = 0; g < 3; g++) {
+    uint8_t ghostIndex = (pacmanRouteIndex + PACMAN_ROUTE_LENGTH - ghostSpacing * (g + 1)) % PACMAN_ROUTE_LENGTH;
+    int ghostX, ghostY;
+    uint8_t ghostDirection;
+    getPacmanRoutePoint(ghostIndex, ghostX, ghostY, ghostDirection);
+    drawGhostSprite(ghostX, ghostY, ghostColors[g], ghostDirection, g + (t / 240));
   }
 }
 
@@ -2391,6 +2657,149 @@ void drawMoireFrame(uint32_t t) {
       float mix = (lineA + lineB + lineC) / 3.0f;
       uint8_t hue = (uint8_t)(128 + mix * 90.0f + t / 12);
       drawPixelMapped(x, y, scaleColor565(colorWheel(hue), (uint8_t)(30 + 200 * (0.5f + 0.5f * mix))));
+    }
+  }
+}
+
+void drawHypnosisFrame(uint32_t t) {
+  float centerX = 15.5f + sinf(t * 0.0013f) * 3.5f;
+  float centerY = 7.5f + cosf(t * 0.0017f) * 2.0f;
+  float pulse = t * 0.009f;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = (x - centerX) * 0.72f;
+      float dy = y - centerY;
+      float radius = sqrtf(dx * dx + dy * dy);
+      int band = (int)floorf(radius * 1.65f - pulse);
+      bool bright = (band & 1) == 0;
+      uint8_t hue = (uint8_t)(t / 18 + radius * 15.0f);
+      drawPixelMapped(x, y, bright ? colorWheel(hue) : scaleColor565(colorWheel(hue + 128), 18));
+    }
+  }
+}
+
+void drawCafeWallFrame(uint32_t t) {
+  const int tileWidth = 4;
+  const int tileHeight = 3;
+  int drift = (t / 110) % (tileWidth * 2);
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    int row = y / tileHeight;
+    bool mortar = (y % tileHeight) == tileHeight - 1;
+    int rowShift = (row & 1) ? drift : -drift;
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      if (mortar) {
+        drawPixelMapped(x, y, matrix->color565(45, 45, 65));
+        continue;
+      }
+      int shiftedX = x + rowShift + row * 2;
+      int tile = shiftedX >= 0 ? shiftedX / tileWidth : (shiftedX - tileWidth + 1) / tileWidth;
+      bool lightTile = ((tile + row) & 1) == 0;
+      uint8_t shimmer = (uint8_t)(25 + 18 * sinf(t * 0.003f + x * 0.25f));
+      drawPixelMapped(x, y, lightTile ? matrix->color565(245, 225, 170)
+                                      : matrix->color565(shimmer, 8, 55));
+    }
+  }
+}
+
+void drawPinwheelFrame(uint32_t t) {
+  float rotation = t * 0.0022f;
+  float breathe = sinf(t * 0.0015f) * 1.8f;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = (x - 15.5f) * 0.55f;
+      float dy = y - 7.5f;
+      float angle = atan2f(dy, dx);
+      float radius = sqrtf(dx * dx + dy * dy);
+      float wave = sinf(angle * 8.0f + radius * (1.15f + breathe * 0.08f) - rotation * 7.0f);
+      uint8_t hue = wave > 0.0f ? (uint8_t)(t / 14 + radius * 9.0f)
+                                : (uint8_t)(t / 14 + 150 + radius * 9.0f);
+      uint8_t brightness = (uint8_t)(105 + 145 * fabsf(wave));
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), brightness));
+    }
+  }
+}
+
+void drawPetalWarpFrame(uint32_t t) {
+  float spin = t * 0.0011f;
+  float zoom = t * 0.010f;
+  float centerX = 15.5f + sinf(t * 0.0007f) * 1.4f;
+  float centerY = 7.5f + cosf(t * 0.0009f) * 0.8f;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = (x - centerX) * 0.52f;
+      float dy = y - centerY;
+      float radius = sqrtf(dx * dx + dy * dy) + 0.18f;
+      float angle = atan2f(dy, dx);
+      float petals = sinf(angle * 12.0f + spin * 4.0f);
+      float folds = sinf(radius * 2.7f - zoom + petals * 2.8f);
+      float razor = sinf(angle * 24.0f - radius * 1.25f + spin * 7.0f);
+      float light = folds * 0.78f + razor * 0.22f;
+      uint8_t hue = (uint8_t)(t / 20 + angle * 35.0f + radius * 13.0f);
+      uint8_t brightness = light > 0.0f ? (uint8_t)(120 + light * 135.0f)
+                                       : (uint8_t)(10 + (light + 1.0f) * 28.0f);
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), brightness));
+    }
+  }
+}
+
+void drawTwistSquareFrame(uint32_t t) {
+  float travel = t * 0.0075f;
+  float globalSpin = t * 0.00065f;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float px = (x - 15.5f) / 15.5f;
+      float py = (y - 7.5f) / 7.5f;
+      float distance = sqrtf(px * px + py * py) + 0.045f;
+      float twist = globalSpin + logf(distance) * 1.18f;
+      float cs = cosf(twist);
+      float sn = sinf(twist);
+      float rx = px * cs - py * sn;
+      float ry = px * sn + py * cs;
+      float squareRadius = fmaxf(fabsf(rx), fabsf(ry));
+      float edgeAngle = atan2f(ry, rx);
+      float nested = sinf(24.0f * logf(squareRadius + 0.055f) - travel);
+      float spokes = sinf(edgeAngle * 16.0f + logf(distance) * 9.0f - travel * 0.45f);
+      bool whiteBand = (nested + spokes * 0.42f) > 0.0f;
+      uint8_t hue = (uint8_t)(t / 17 + squareRadius * 130.0f);
+      uint8_t brightness = whiteBand ? 255 : 16;
+      drawPixelMapped(x, y, scaleColor565(whiteBand ? matrix->color565(255, 245, 220)
+                                                    : colorWheel(hue), brightness));
+    }
+  }
+}
+
+void drawEventHorizonFrame(uint32_t t) {
+  float orbit = t * 0.0014f;
+  float centerX = 15.5f + cosf(orbit) * 2.0f;
+  float centerY = 7.5f + sinf(orbit * 1.31f) * 1.0f;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float dx = (x - centerX) * 0.57f;
+      float dy = y - centerY;
+      float radius = sqrtf(dx * dx + dy * dy) + 0.12f;
+      float angle = atan2f(dy, dx);
+      float gravityTwist = angle + 4.8f / radius + t * 0.0017f;
+      float gridA = sinf(gravityTwist * 9.0f);
+      float gridB = sinf(radius * 3.4f - t * 0.012f + sinf(angle * 5.0f));
+      float checker = gridA * gridB;
+      float ring = 1.0f - fminf(1.0f, fabsf(radius - 3.25f) * 1.8f);
+      float jet = powf(fabsf(cosf(angle)), 18.0f) * (0.35f + ring * 0.65f);
+      uint8_t hue = (uint8_t)(t / 12 + angle * 42.0f + radius * 17.0f);
+      uint8_t brightness;
+      if (radius < 1.15f) {
+        brightness = (uint8_t)(8 + radius * 18.0f);
+      } else {
+        float energy = 0.20f + (checker > 0.0f ? 0.45f : 0.05f) + ring * 0.55f + jet * 0.45f;
+        brightness = (uint8_t)fminf(255.0f, energy * 255.0f);
+      }
+      uint16_t color = ring > 0.58f ? matrix->color565(255, 235, 170) : colorWheel(hue);
+      drawPixelMapped(x, y, scaleColor565(color, brightness));
     }
   }
 }
@@ -2578,6 +2987,40 @@ void drawTvBarsFrame(uint32_t t) {
   }
 }
 
+void drawColorTvStaticFrame(uint32_t t) {
+  uint32_t frame = t / 24;
+  int tearY = (int)((frame / 3) % PANEL_RES_Y);
+  int tearShift = (int)(tvNoise(0, tearY, frame) % 9) - 4;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    int rowJitter = (int)(tvNoise(31, y, frame / 2) % 5) - 2;
+    if (abs(y - tearY) <= 1) rowJitter += tearShift;
+
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      int sampleX = (x + rowJitter + PANEL_RES_X) % PANEL_RES_X;
+      uint8_t hueNoise = tvNoise(sampleX, y, frame);
+      uint8_t levelNoise = tvNoise(sampleX + 17, y + 9, frame * 3 + 41);
+      uint8_t sparkle = tvNoise(sampleX + 7, y + 19, frame * 5 + 113);
+
+      uint16_t color;
+      if (sparkle > 247) {
+        color = WHITE;
+      } else if (sparkle < 9) {
+        color = BLACK;
+      } else {
+        // Fully saturated random chroma with noisy luminance reads as classic
+        // analog color snow instead of a smooth rainbow animation.
+        uint8_t brightness = (uint8_t)(70 + (levelNoise % 186));
+        color = scaleColor565(colorWheel(hueNoise), brightness);
+      }
+
+      // Dark alternating scanlines keep the effect television-like.
+      if ((y & 1) == 0 && sparkle < 235) color = scaleColor565(color, 190);
+      drawPixelMapped(x, y, color);
+    }
+  }
+}
+
 void drawSineWaveFrame(uint32_t t) {
   float time = t * 0.0040f;
 
@@ -2618,6 +3061,49 @@ void drawSineWaveFrame(uint32_t t) {
 
       lastY = y;
       hasLast = true;
+    }
+  }
+}
+
+void drawNoiseFlowFrame(uint32_t t) {
+  float time = t * 0.0018f;
+  float turbulence = noiseFlowAmount / 10.0f;
+  uint32_t grainFrame = t / 55;
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float px = x * 0.22f;
+      float py = y * 0.28f;
+
+      // Two moving noise-like fields bend the coordinates before sampling.
+      float warpX = sinf(py * 1.37f + time * 1.9f) + cosf(px * 0.71f - time * 1.1f);
+      float warpY = cosf(px * 1.21f - time * 1.4f) + sinf(py * 0.83f + time * 0.8f);
+      float qx = px + warpX * (0.18f + turbulence * 0.72f);
+      float qy = py + warpY * (0.18f + turbulence * 0.72f);
+
+      float octaveA = sinf(qx * 1.35f + qy * 0.77f + time);
+      float octaveB = cosf(qx * 2.63f - qy * 1.91f - time * 1.43f) * 0.50f;
+      float octaveC = sinf(qx * 5.17f + qy * 3.41f + time * 2.17f) * 0.25f;
+      float field = (octaveA + octaveB * turbulence + octaveC * turbulence) /
+                    (1.0f + 0.75f * turbulence);
+
+      // Thin bright contours make the flow resemble electric liquid.
+      float contour = 1.0f - fminf(1.0f, fabsf(sinf(field * 7.5f + time * 0.7f)) * 3.2f);
+      float glow = 0.20f + 0.46f * (field * 0.5f + 0.5f) + contour * 0.55f;
+      uint8_t hue = (uint8_t)(t / 13 + field * 75.0f + warpX * 24.0f + x * 2);
+      uint8_t brightness = (uint8_t)fminf(255.0f, glow * 255.0f);
+
+      if (noiseFlowAmount > 0) {
+        uint8_t grain = tvNoise(x, y, grainFrame);
+        if (grain > 255 - noiseFlowAmount * 3) {
+          brightness = 255;
+          hue += 96;
+        } else {
+          int grainOffset = ((int)grain - 127) * noiseFlowAmount / 80;
+          brightness = (uint8_t)constrain((int)brightness + grainOffset, 6, 255);
+        }
+      }
+      drawPixelMapped(x, y, scaleColor565(colorWheel(hue), brightness));
     }
   }
 }
@@ -2851,14 +3337,25 @@ void printHelp() {
   Serial.println("  sphere       -> run a fake 3D particle sphere");
   Serial.println("  parallax     -> run a parallax starfield");
   Serial.println("  moire        -> run moire-like shifting lines");
+  Serial.println("  hypnosis     -> run pulsing hypnotic rings");
+  Serial.println("  cafewall     -> run the drifting cafe-wall illusion");
+  Serial.println("  pinwheel     -> run a rotating chromatic pinwheel illusion");
+  Serial.println("  petalwarp    -> run a zooming flower-fold illusion");
+  Serial.println("  twistsquare  -> run a twisting nested-square tunnel");
+  Serial.println("  eventhorizon -> run the chromatic gravity-well showpiece");
   Serial.println("  morph        -> run a morphing symbol animation");
   Serial.println("  dvd          -> run a bouncing DVD logo screensaver");
   Serial.println("  tvbars       -> run animated TV color bars with static");
+  Serial.println("  tvstatic     -> run full-screen colorful analog TV static");
   Serial.println("  sinewave     -> run layered colorful sine waves");
+  Serial.println("  noiseflow <0-10> -> run adjustable electric noise currents");
   Serial.println("  phasebeat    -> run two drifting waves with beat highlights");
   Serial.println("  lissajous    -> run a colorful Lissajous curve");
   Serial.println("  harmonics    -> run stacked harmonic wave traces");
   Serial.println("  text <msg>   -> display remapped text using built-in 5x7 font");
+  Serial.println("  scroll <msg> -> continuously scroll text from right to left");
+  Serial.println("  draw <msg>   -> draw each character one pixel at a time");
+  Serial.println("  emoji [ms]   -> cycle through emojis with an optional delay");
   Serial.println("  rchar <c>    -> display one large char on rotated 16x32 view");
   Serial.println("  rchartest <ms> -> cycle through all supported rotated chars");
   Serial.println("  stop         -> stop animation / stepped mode");
@@ -3309,8 +3806,9 @@ void handleCommand(String input) {
   }
 
   if (input == "pacman") {
+    resetPacmanGame();
     currentMode = MODE_PACMAN;
-    Serial.println("Pac-Man effect started. Send 'stop' to return to command mode.");
+    Serial.println("Pac-Man maze chase started. Send 'stop' to return to command mode.");
     return;
   }
 
@@ -3329,6 +3827,42 @@ void handleCommand(String input) {
   if (input == "moire") {
     currentMode = MODE_MOIRE;
     Serial.println("Moire effect started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "hypnosis") {
+    currentMode = MODE_HYPNOSIS;
+    Serial.println("Hypnotic rings started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "cafewall") {
+    currentMode = MODE_CAFEWALL;
+    Serial.println("Cafe-wall illusion started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "pinwheel") {
+    currentMode = MODE_PINWHEEL;
+    Serial.println("Chromatic pinwheel started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "petalwarp") {
+    currentMode = MODE_PETALWARP;
+    Serial.println("Petal warp started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "twistsquare") {
+    currentMode = MODE_TWISTSQUARE;
+    Serial.println("Twisting square tunnel started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "eventhorizon") {
+    currentMode = MODE_EVENTHORIZON;
+    Serial.println("Event horizon showpiece started. Send 'stop' to return to command mode.");
     return;
   }
 
@@ -3351,9 +3885,39 @@ void handleCommand(String input) {
     return;
   }
 
+  if (input == "tvstatic") {
+    currentMode = MODE_TVSTATIC;
+    Serial.println("Color TV static started. Send 'stop' to return to command mode.");
+    return;
+  }
+
   if (input == "sinewave") {
     currentMode = MODE_SINEWAVE;
     Serial.println("Colorful sine wave started. Send 'stop' to return to command mode.");
+    return;
+  }
+
+  if (input == "noiseflow") {
+    currentMode = MODE_NOISEFLOW;
+    Serial.printf("Noise flow started at level %u. Use 'noiseflow <0-10>' to adjust.\n", noiseFlowAmount);
+    return;
+  }
+
+  if (input.startsWith("noiseflow ")) {
+    String value = input.substring(10);
+    value.trim();
+    bool validLevel = value.length() > 0 && value.length() <= 2;
+    for (unsigned int i = 0; i < value.length() && validLevel; i++) {
+      validLevel = value[i] >= '0' && value[i] <= '9';
+    }
+    int level = validLevel ? value.toInt() : -1;
+    if (level < 0 || level > 10) {
+      Serial.println("Use: noiseflow <0-10>");
+      return;
+    }
+    noiseFlowAmount = (uint8_t)level;
+    currentMode = MODE_NOISEFLOW;
+    Serial.printf("Noise flow started at level %u. Send 'stop' to return to command mode.\n", noiseFlowAmount);
     return;
   }
 
@@ -3384,6 +3948,46 @@ void handleCommand(String input) {
     showTextMessage(textMessage);
     Serial.print("Displayed text: ");
     Serial.println(textMessage);
+    return;
+  }
+
+  if (input.startsWith("scroll ")) {
+    textMessage = input.substring(7);
+    if (textMessage.length() == 0) textMessage = " ";
+    scrollTextX = PANEL_RES_X;
+    scrollTextLastStep = 0;
+    currentMode = MODE_SCROLL_TEXT;
+    Serial.print("Scrolling text: ");
+    Serial.println(textMessage);
+    return;
+  }
+
+  if (input.startsWith("draw ")) {
+    textMessage = input.substring(5);
+    if (textMessage.length() == 0) textMessage = " ";
+    drawTextCharIndex = 0;
+    drawTextPixelIndex = 0;
+    drawTextLastStep = 0;
+    matrix->fillScreen(BLACK);
+    currentMode = MODE_DRAW_TEXT;
+    Serial.print("Drawing text one character at a time: ");
+    Serial.println(textMessage);
+    return;
+  }
+
+  if (input == "emoji" || input.startsWith("emoji ")) {
+    if (input.length() > 5) {
+      int requestedDelay = input.substring(6).toInt();
+      if (requestedDelay < 100 || requestedDelay > 60000) {
+        Serial.println("Use: emoji [delay-ms], where delay is 100..60000.");
+        return;
+      }
+      emojiDelayMs = (uint16_t)requestedDelay;
+    }
+    emojiIndex = 0;
+    emojiLastChange = 0;
+    currentMode = MODE_EMOJI;
+    Serial.printf("Emoji cycle started with %u ms delay. Send 'stop' to return.\n", emojiDelayMs);
     return;
   }
 
@@ -3796,6 +4400,36 @@ void loop() {
     delay(22);
   }
 
+  if (currentMode == MODE_HYPNOSIS) {
+    drawHypnosisFrame(millis());
+    delay(22);
+  }
+
+  if (currentMode == MODE_CAFEWALL) {
+    drawCafeWallFrame(millis());
+    delay(35);
+  }
+
+  if (currentMode == MODE_PINWHEEL) {
+    drawPinwheelFrame(millis());
+    delay(22);
+  }
+
+  if (currentMode == MODE_PETALWARP) {
+    drawPetalWarpFrame(millis());
+    delay(22);
+  }
+
+  if (currentMode == MODE_TWISTSQUARE) {
+    drawTwistSquareFrame(millis());
+    delay(24);
+  }
+
+  if (currentMode == MODE_EVENTHORIZON) {
+    drawEventHorizonFrame(millis());
+    delay(22);
+  }
+
   if (currentMode == MODE_MORPH) {
     drawMorphFrame(millis());
     delay(40);
@@ -3811,8 +4445,18 @@ void loop() {
     delay(30);
   }
 
+  if (currentMode == MODE_TVSTATIC) {
+    drawColorTvStaticFrame(millis());
+    delay(24);
+  }
+
   if (currentMode == MODE_SINEWAVE) {
     drawSineWaveFrame(millis());
+    delay(25);
+  }
+
+  if (currentMode == MODE_NOISEFLOW) {
+    drawNoiseFlowFrame(millis());
     delay(25);
   }
 
@@ -3829,5 +4473,17 @@ void loop() {
   if (currentMode == MODE_HARMONICS) {
     drawHarmonicsFrame(millis());
     delay(25);
+  }
+
+  if (currentMode == MODE_SCROLL_TEXT) {
+    drawScrollTextFrame(millis());
+  }
+
+  if (currentMode == MODE_DRAW_TEXT) {
+    drawTextWritingFrame(millis());
+  }
+
+  if (currentMode == MODE_EMOJI) {
+    drawEmojiFrame(millis());
   }
 }

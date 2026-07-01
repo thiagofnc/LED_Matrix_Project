@@ -182,12 +182,18 @@ What these are for:
 ### Text And Character Commands
 
 - `text <msg>`
+- `scroll <msg>`
+- `draw <msg>`
+- `emoji [delay-ms]`
 - `rchar <c>`
 - `rchartest <ms>`
 
 What they do:
 
 - `text <msg>` renders remapped text using a built-in `5x7` font
+- `scroll <msg>` continuously scrolls the message from right to left
+- `draw <msg>` draws each message character one pixel at a time
+- `emoji [delay-ms]` cycles through smile, heart, wink, and surprised emojis (default `1000` ms)
 - `rchar <c>` draws one large character on a rotated portrait-style `16x32` view
 - `rchartest <ms>` cycles through all supported rotated characters with a delay
 
@@ -257,6 +263,14 @@ Important limitation:
 - `sphere`
 - `parallax`
 - `moire`
+- `hypnosis`
+- `cafewall`
+- `pinwheel`
+- `petalwarp`
+- `twistsquare`
+- `eventhorizon`
+- `noiseflow <0-10>`
+- `tvstatic`
 - `morph`
 
 What they do:
@@ -292,10 +306,18 @@ What they do:
 - `tessellate` runs tessellations that shift and morph
 - `beatburst` runs particle explosions on beats
 - `sunrise` runs a sunrise gradient over silhouettes
-- `pacman` runs a Pac-Man style chase loop
+- `pacman` runs Pac-Man and three spaced ghosts through a pellet-filled maze; eaten pellets remain cleared until the round resets
 - `sphere` runs a fake 3D sphere made of particles
 - `parallax` runs a parallax starfield
 - `moire` runs moire-like shifting lines
+- `hypnosis` runs pulsing, wandering concentric rings
+- `cafewall` runs offset tile rows that make straight dividers appear slanted
+- `pinwheel` runs a rotating chromatic spiral with a breathing depth effect
+- `petalwarp` runs a zooming radial flower made from folding light bands
+- `twistsquare` runs a black-and-white nested-square spiral tunnel
+- `eventhorizon` runs a chromatic gravity-well showpiece with a warped grid and glowing lens ring
+- `noiseflow <0-10>` runs an adjustable electric-liquid noise field with warped color currents
+- `tvstatic` runs full-screen colorful analog television snow with scanlines and horizontal tearing
 - `morph` runs morphing one symbol into another
 
 All of these custom effects draw through `drawPixelMapped()`.
