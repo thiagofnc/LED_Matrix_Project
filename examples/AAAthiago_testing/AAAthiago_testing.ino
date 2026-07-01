@@ -97,6 +97,12 @@ enum TestMode {
   MODE_BEATBURST,
   MODE_SUNRISE,
   MODE_PACMAN,
+  MODE_FLAPPY,
+  MODE_PONG,
+  MODE_BREAKOUT,
+  MODE_SNAKE,
+  MODE_INVADERS,
+  MODE_RHYTHM,
   MODE_SPHERE,
   MODE_PARALLAX,
   MODE_MOIRE,
@@ -147,6 +153,40 @@ bool pacmanPellets[PACMAN_ROUTE_LENGTH];
 uint8_t pacmanRouteIndex = 0;
 uint32_t pacmanLastStep = 0;
 uint32_t pacmanRoundCompleteAt = 0;
+float flappyY = 7.0f;
+float flappyVelocity = 0.0f;
+float flappyPipeX[2] = {24.0f, 42.0f};
+uint8_t flappyGapY[2] = {5, 9};
+uint16_t flappyScore = 0;
+bool flappyGameOver = false;
+uint32_t flappyLastFrame = 0;
+float pongX = 15.0f, pongY = 7.0f, pongVX = 0.55f, pongVY = 0.34f;
+float pongLeftY = 5.0f, pongRightY = 5.0f;
+uint32_t pongLastFrame = 0;
+float breakoutX = 15.0f, breakoutY = 11.0f, breakoutVX = 0.45f, breakoutVY = -0.38f;
+float breakoutPaddleX = 13.0f;
+bool breakoutBricks[3][8];
+uint32_t breakoutLastFrame = 0;
+uint8_t breakoutSpeed = 5;
+uint8_t snakeX[128], snakeY[128], snakeLength = 4;
+int8_t snakeDX = 1, snakeDY = 0;
+uint8_t snakeFoodX = 12, snakeFoodY = 4;
+bool snakeGameOver = false;
+uint32_t snakeLastStep = 0;
+bool invaderAlive[12];
+int8_t invaderOffsetX = 1, invaderOffsetY = 1, invaderDirection = 1;
+int8_t invaderPlayerX = 15, invaderBulletX = -1, invaderBulletY = -1;
+bool invaderGameOver = false, invaderWon = false;
+uint32_t invaderLastFrame = 0, invaderLastMove = 0;
+const uint8_t RHYTHM_NOTE_COUNT = 16;
+int8_t rhythmNoteY[RHYTHM_NOTE_COUNT];
+uint8_t rhythmNoteLane[RHYTHM_NOTE_COUNT];
+bool rhythmNoteActive[RHYTHM_NOTE_COUNT];
+uint16_t rhythmScore = 0, rhythmCombo = 0;
+uint8_t rhythmFlashLane = 255, rhythmFlashFrames = 0;
+bool rhythmHitSuccess = false;
+uint32_t rhythmLastStep = 0, rhythmLastSpawn = 0;
+uint8_t rhythmSpeed = 5;
 String clockText = "12:34";
 String lastClockText = "";
 char rotatedChar = 'A';
@@ -2545,12 +2585,12 @@ void drawGhostSprite(int x, int y, uint16_t color, uint8_t direction, uint8_t ph
   int pupilOffsetX = direction == 0 ? 1 : 0;
   int pupilOffsetY = direction == 1 ? 1 : 0;
   for (int ey = -1; ey <= 0; ey++) {
-    drawPixelMapped(x - 2, y + ey, WHITE);
-    drawPixelMapped(x - 1, y + ey, WHITE);
-    drawPixelMapped(x, y + ey, WHITE);
-    drawPixelMapped(x + 1, y + ey, WHITE);
+    drawPixelMapped(x - 2, y + ey, color);
+    drawPixelMapped(x - 1, y + ey, color);
+    drawPixelMapped(x, y + ey, color);
+    drawPixelMapped(x + 1, y + ey, color);
   }
-  uint16_t pupil = matrix->color565(20, 40, 180);
+  uint16_t pupil = WHITE;
   drawPixelMapped(x - 2 + pupilOffsetX, y - 1 + pupilOffsetY, pupil);
   drawPixelMapped(x + pupilOffsetX, y - 1 + pupilOffsetY, pupil);
 }
@@ -2606,6 +2646,410 @@ void drawPacmanFrame(uint32_t t) {
     getPacmanRoutePoint(ghostIndex, ghostX, ghostY, ghostDirection);
     drawGhostSprite(ghostX, ghostY, ghostColors[g], ghostDirection, g + (t / 240));
   }
+}
+
+void resetFlappyGame() {
+  flappyY = 7.0f;
+  flappyVelocity = 0.0f;
+  flappyPipeX[0] = 24.0f;
+  flappyPipeX[1] = 42.0f;
+  flappyGapY[0] = random(4, 10);
+  flappyGapY[1] = random(4, 10);
+  flappyScore = 0;
+  flappyGameOver = false;
+  flappyLastFrame = millis();
+}
+
+void flapBird() {
+  if (flappyGameOver) {
+    resetFlappyGame();
+  } else {
+    flappyVelocity = -1.35f;
+  }
+}
+
+void drawFlappyFrame(uint32_t t) {
+  if (t - flappyLastFrame < 55) return;
+  flappyLastFrame = t;
+  matrix->fillScreen(matrix->color565(8, 35, 80));
+
+  if (!flappyGameOver) {
+    flappyVelocity += 0.18f;
+    if (flappyVelocity > 1.15f) flappyVelocity = 1.15f;
+    flappyY += flappyVelocity;
+
+    for (uint8_t i = 0; i < 2; i++) {
+      flappyPipeX[i] -= 0.48f;
+      if (flappyPipeX[i] < -3.0f) {
+        flappyPipeX[i] += 36.0f;
+        flappyGapY[i] = random(4, 10);
+        flappyScore++;
+      }
+    }
+  }
+
+  uint16_t pipeColor = matrix->color565(30, 230, 70);
+  for (uint8_t i = 0; i < 2; i++) {
+    int pipeX = (int)flappyPipeX[i];
+    int gapTop = flappyGapY[i] - 3;
+    int gapBottom = flappyGapY[i] + 3;
+    for (int x = pipeX; x < pipeX + 3; x++) {
+      for (int y = 0; y < PANEL_RES_Y; y++) {
+        if (y < gapTop || y > gapBottom) drawPixelMapped(x, y, pipeColor);
+      }
+    }
+    if (!flappyGameOver && pipeX <= 7 && pipeX + 2 >= 5) {
+      int birdY = (int)flappyY;
+      if (birdY < gapTop || birdY + 1 > gapBottom) flappyGameOver = true;
+    }
+  }
+
+  int birdY = (int)flappyY;
+  if (birdY < 0 || birdY + 1 >= PANEL_RES_Y) flappyGameOver = true;
+  uint16_t birdColor = flappyGameOver ? RED : YELLOW;
+  drawPixelMapped(5, birdY, birdColor);
+  drawPixelMapped(6, birdY, birdColor);
+  drawPixelMapped(5, birdY + 1, birdColor);
+  drawPixelMapped(6, birdY + 1, WHITE);
+
+  for (uint8_t i = 0; i < min((uint16_t)10, flappyScore); i++) {
+    drawPixelMapped(1 + i, 1, WHITE);
+  }
+  if (flappyGameOver) {
+    drawMappedText(7, 5, "HIT", WHITE);
+  }
+}
+
+void resetPongGame() {
+  pongX = 15.0f;
+  pongY = 7.0f;
+  pongVX = random(2) ? 0.55f : -0.55f;
+  pongVY = random(2) ? 0.34f : -0.34f;
+  pongLeftY = pongRightY = 5.0f;
+  pongLastFrame = millis();
+}
+
+void drawPongFrame(uint32_t t) {
+  if (t - pongLastFrame < 45) return;
+  pongLastFrame = t;
+  matrix->fillScreen(BLACK);
+  for (int y = 0; y < PANEL_RES_Y; y += 2) drawPixelMapped(PANEL_RES_X / 2, y, matrix->color565(45, 45, 70));
+
+  pongLeftY += ((pongY - 2.0f) - pongLeftY) * 0.22f;
+  pongRightY += ((pongY - 2.0f) - pongRightY) * 0.18f;
+  pongX += pongVX;
+  pongY += pongVY;
+  if (pongY <= 0 || pongY >= PANEL_RES_Y - 1) pongVY = -pongVY;
+  if (pongX <= 2 && pongX >= 1 && pongVX < 0 && pongY >= pongLeftY && pongY <= pongLeftY + 4) pongVX = -pongVX;
+  if (pongX >= PANEL_RES_X - 3 && pongX <= PANEL_RES_X - 2 && pongVX > 0 && pongY >= pongRightY && pongY <= pongRightY + 4) pongVX = -pongVX;
+  if (pongX < 0 || pongX >= PANEL_RES_X) resetPongGame();
+
+  for (int i = 0; i < 5; i++) {
+    drawPixelMapped(1, (int)pongLeftY + i, CYAN);
+    drawPixelMapped(PANEL_RES_X - 2, (int)pongRightY + i, MAGENTA);
+  }
+  drawPixelMapped((int)pongX, (int)pongY, WHITE);
+}
+
+void resetBreakoutGame() {
+  for (uint8_t row = 0; row < 3; row++) {
+    for (uint8_t col = 0; col < 8; col++) breakoutBricks[row][col] = true;
+  }
+  breakoutX = 15.0f;
+  breakoutY = 11.0f;
+  breakoutVX = random(2) ? 0.45f : -0.45f;
+  breakoutVY = -0.38f;
+  breakoutPaddleX = 13.0f;
+  breakoutLastFrame = millis();
+}
+
+void moveBreakoutPaddle(int8_t direction) {
+  breakoutPaddleX += direction * 3;
+  if (breakoutPaddleX < 0) breakoutPaddleX = 0;
+  if (breakoutPaddleX > PANEL_RES_X - 5) breakoutPaddleX = PANEL_RES_X - 5;
+}
+
+void drawBreakoutFrame(uint32_t t) {
+  uint16_t frameInterval = 70 - breakoutSpeed * 5;
+  if (t - breakoutLastFrame < frameInterval) return;
+  breakoutLastFrame = t;
+  matrix->fillScreen(BLACK);
+  uint16_t brickColors[3] = {MAGENTA, matrix->color565(255, 100, 20), CYAN};
+  bool bricksRemain = false;
+  for (uint8_t row = 0; row < 3; row++) {
+    for (uint8_t col = 0; col < 8; col++) {
+      if (!breakoutBricks[row][col]) continue;
+      bricksRemain = true;
+      for (uint8_t px = 0; px < 3; px++) drawPixelMapped(col * 4 + px, row + 1, brickColors[row]);
+    }
+  }
+  if (!bricksRemain) resetBreakoutGame();
+
+  breakoutX += breakoutVX;
+  breakoutY += breakoutVY;
+  if (breakoutX <= 0 || breakoutX >= PANEL_RES_X - 1) breakoutVX = -breakoutVX;
+  if (breakoutY <= 0) breakoutVY = -breakoutVY;
+
+  int ballRow = (int)breakoutY - 1;
+  int ballCol = (int)breakoutX / 4;
+  if (ballRow >= 0 && ballRow < 3 && ballCol >= 0 && ballCol < 8 && breakoutBricks[ballRow][ballCol]) {
+    breakoutBricks[ballRow][ballCol] = false;
+    breakoutVY = fabsf(breakoutVY);
+  }
+  if (breakoutY >= PANEL_RES_Y - 3 && breakoutY <= PANEL_RES_Y - 2 && breakoutVY > 0 &&
+      breakoutX >= breakoutPaddleX && breakoutX <= breakoutPaddleX + 4) {
+    breakoutVY = -breakoutVY;
+    breakoutVX += (breakoutX - (breakoutPaddleX + 2.0f)) * 0.04f;
+  }
+  if (breakoutY >= PANEL_RES_Y) resetBreakoutGame();
+
+  for (int i = 0; i < 5; i++) drawPixelMapped((int)breakoutPaddleX + i, PANEL_RES_Y - 2, YELLOW);
+  drawPixelMapped((int)breakoutX, (int)breakoutY, WHITE);
+}
+
+void placeSnakeFood() {
+  bool onSnake;
+  do {
+    onSnake = false;
+    snakeFoodX = random(0, 16);
+    snakeFoodY = random(0, 8);
+    for (uint8_t i = 0; i < snakeLength; i++) {
+      if (snakeX[i] == snakeFoodX && snakeY[i] == snakeFoodY) onSnake = true;
+    }
+  } while (onSnake);
+}
+
+void resetSnakeGame() {
+  snakeLength = 4;
+  for (uint8_t i = 0; i < snakeLength; i++) {
+    snakeX[i] = 7 - i;
+    snakeY[i] = 4;
+  }
+  snakeDX = 1;
+  snakeDY = 0;
+  snakeGameOver = false;
+  snakeLastStep = millis();
+  placeSnakeFood();
+}
+
+void steerSnake(int8_t dx, int8_t dy) {
+  if (snakeGameOver) {
+    resetSnakeGame();
+    return;
+  }
+  if (dx == -snakeDX && dy == -snakeDY) return;
+  snakeDX = dx;
+  snakeDY = dy;
+}
+
+void drawSnakeFrame(uint32_t t) {
+  if (!snakeGameOver && t - snakeLastStep >= 170) {
+    snakeLastStep = t;
+    int nextX = snakeX[0] + snakeDX;
+    int nextY = snakeY[0] + snakeDY;
+    if (nextX < 0 || nextX >= 16 || nextY < 0 || nextY >= 8) snakeGameOver = true;
+    for (uint8_t i = 0; i < snakeLength && !snakeGameOver; i++) {
+      if (snakeX[i] == nextX && snakeY[i] == nextY) snakeGameOver = true;
+    }
+    if (!snakeGameOver) {
+      bool ate = nextX == snakeFoodX && nextY == snakeFoodY;
+      if (ate && snakeLength < 128) snakeLength++;
+      for (int i = snakeLength - 1; i > 0; i--) {
+        snakeX[i] = snakeX[i - 1];
+        snakeY[i] = snakeY[i - 1];
+      }
+      snakeX[0] = nextX;
+      snakeY[0] = nextY;
+      if (ate) placeSnakeFood();
+    }
+  }
+
+  matrix->fillScreen(BLACK);
+  uint16_t foodColor = matrix->color565(255, 40, 80);
+  for (uint8_t oy = 0; oy < 2; oy++) for (uint8_t ox = 0; ox < 2; ox++)
+    drawPixelMapped(snakeFoodX * 2 + ox, snakeFoodY * 2 + oy, foodColor);
+  for (uint8_t i = 0; i < snakeLength; i++) {
+    uint16_t segmentColor = i == 0 ? YELLOW : matrix->color565(20, 255 - min(180, i * 5), 80);
+    for (uint8_t oy = 0; oy < 2; oy++) for (uint8_t ox = 0; ox < 2; ox++)
+      drawPixelMapped(snakeX[i] * 2 + ox, snakeY[i] * 2 + oy, segmentColor);
+  }
+  if (snakeGameOver) drawMappedText(7, 5, "HIT", WHITE);
+}
+
+void resetInvadersGame() {
+  for (uint8_t i = 0; i < 12; i++) invaderAlive[i] = true;
+  invaderOffsetX = 1;
+  invaderOffsetY = 1;
+  invaderDirection = 1;
+  invaderPlayerX = 15;
+  invaderBulletX = -1;
+  invaderBulletY = -1;
+  invaderGameOver = false;
+  invaderWon = false;
+  invaderLastFrame = millis();
+  invaderLastMove = millis();
+}
+
+void controlInvaders(int8_t direction, bool fire) {
+  if (invaderGameOver || invaderWon) {
+    resetInvadersGame();
+    return;
+  }
+  if (direction != 0) {
+    invaderPlayerX += direction * 2;
+    if (invaderPlayerX < 1) invaderPlayerX = 1;
+    if (invaderPlayerX > PANEL_RES_X - 2) invaderPlayerX = PANEL_RES_X - 2;
+  }
+  if (fire && invaderBulletY < 0) {
+    invaderBulletX = invaderPlayerX;
+    invaderBulletY = PANEL_RES_Y - 3;
+  }
+}
+
+void drawInvadersFrame(uint32_t t) {
+  if (t - invaderLastFrame >= 70 && !invaderGameOver && !invaderWon) {
+    invaderLastFrame = t;
+    if (invaderBulletY >= 0) {
+      invaderBulletY--;
+      for (uint8_t i = 0; i < 12; i++) {
+        if (!invaderAlive[i]) continue;
+        int alienX = invaderOffsetX + (i % 6) * 5;
+        int alienY = invaderOffsetY + (i / 6) * 3;
+        if (invaderBulletX >= alienX && invaderBulletX <= alienX + 1 && invaderBulletY == alienY) {
+          invaderAlive[i] = false;
+          invaderBulletY = -1;
+          break;
+        }
+      }
+      if (invaderBulletY < 0) invaderBulletX = -1;
+    }
+  }
+
+  if (t - invaderLastMove >= 420 && !invaderGameOver && !invaderWon) {
+    invaderLastMove = t;
+    int nextOffset = invaderOffsetX + invaderDirection;
+    if (nextOffset < 0 || nextOffset + 27 >= PANEL_RES_X) {
+      invaderDirection = -invaderDirection;
+      invaderOffsetY++;
+    } else {
+      invaderOffsetX = nextOffset;
+    }
+    if (invaderOffsetY + 3 >= PANEL_RES_Y - 3) invaderGameOver = true;
+  }
+
+  bool anyAlive = false;
+  matrix->fillScreen(BLACK);
+  for (uint8_t i = 0; i < 12; i++) {
+    if (!invaderAlive[i]) continue;
+    anyAlive = true;
+    int alienX = invaderOffsetX + (i % 6) * 5;
+    int alienY = invaderOffsetY + (i / 6) * 3;
+    uint16_t alienColor = (i / 6) == 0 ? MAGENTA : CYAN;
+    drawPixelMapped(alienX, alienY, alienColor);
+    drawPixelMapped(alienX + 1, alienY, alienColor);
+    drawPixelMapped(alienX, alienY + 1, alienColor);
+    drawPixelMapped(alienX + 1, alienY + 1, alienColor);
+  }
+  if (!anyAlive) invaderWon = true;
+  drawPixelMapped(invaderPlayerX, PANEL_RES_Y - 2, YELLOW);
+  drawPixelMapped(invaderPlayerX - 1, PANEL_RES_Y - 1, YELLOW);
+  drawPixelMapped(invaderPlayerX, PANEL_RES_Y - 1, YELLOW);
+  drawPixelMapped(invaderPlayerX + 1, PANEL_RES_Y - 1, YELLOW);
+  if (invaderBulletY >= 0) drawPixelMapped(invaderBulletX, invaderBulletY, WHITE);
+  if (invaderGameOver) drawMappedText(7, 5, "HIT", WHITE);
+  if (invaderWon) drawMappedText(7, 5, "WIN", GREEN);
+}
+
+void resetRhythmGame() {
+  for (uint8_t i = 0; i < RHYTHM_NOTE_COUNT; i++) rhythmNoteActive[i] = false;
+  rhythmScore = 0;
+  rhythmCombo = 0;
+  rhythmFlashLane = 255;
+  rhythmFlashFrames = 0;
+  rhythmHitSuccess = false;
+  rhythmLastStep = millis();
+  rhythmLastSpawn = millis() - (680 - rhythmSpeed * 40);
+}
+
+void spawnRhythmNote() {
+  for (uint8_t i = 0; i < RHYTHM_NOTE_COUNT; i++) {
+    if (rhythmNoteActive[i]) continue;
+    rhythmNoteActive[i] = true;
+    rhythmNoteLane[i] = random(0, 4);
+    rhythmNoteY[i] = 0;
+    return;
+  }
+}
+
+void hitRhythmLane(uint8_t lane) {
+  int bestNote = -1;
+  int bestDistance = 99;
+  for (uint8_t i = 0; i < RHYTHM_NOTE_COUNT; i++) {
+    if (!rhythmNoteActive[i] || rhythmNoteLane[i] != lane) continue;
+    int distance = abs(13 - rhythmNoteY[i]);
+    if (distance <= 2 && distance < bestDistance) {
+      bestDistance = distance;
+      bestNote = i;
+    }
+  }
+
+  rhythmFlashLane = lane;
+  rhythmFlashFrames = 4;
+  rhythmHitSuccess = bestNote >= 0;
+  if (bestNote >= 0) {
+    rhythmNoteActive[bestNote] = false;
+    rhythmCombo++;
+    rhythmScore += bestDistance == 0 ? 3 : (bestDistance == 1 ? 2 : 1);
+  } else {
+    rhythmCombo = 0;
+  }
+}
+
+void drawRhythmFrame(uint32_t t) {
+  uint16_t spawnInterval = 680 - rhythmSpeed * 40;
+  uint16_t stepInterval = 110 - rhythmSpeed * 5;
+  if (t - rhythmLastSpawn >= spawnInterval) {
+    rhythmLastSpawn = t;
+    spawnRhythmNote();
+  }
+  if (t - rhythmLastStep >= stepInterval) {
+    rhythmLastStep = t;
+    for (uint8_t i = 0; i < RHYTHM_NOTE_COUNT; i++) {
+      if (!rhythmNoteActive[i]) continue;
+      rhythmNoteY[i]++;
+      if (rhythmNoteY[i] > 14) {
+        rhythmNoteActive[i] = false;
+        rhythmCombo = 0;
+      }
+    }
+    if (rhythmFlashFrames > 0) rhythmFlashFrames--;
+  }
+
+  matrix->fillScreen(BLACK);
+  uint16_t laneColors[4] = {CYAN, GREEN, MAGENTA, matrix->color565(255, 110, 20)};
+  for (uint8_t lane = 0; lane < 4; lane++) {
+    int laneLeft = lane * 8;
+    for (int y = 0; y < PANEL_RES_Y; y += 2) drawPixelMapped(laneLeft, y, matrix->color565(18, 18, 35));
+    for (uint8_t x = 1; x <= 6; x++) drawPixelMapped(laneLeft + x, 14, scaleColor565(laneColors[lane], 100));
+  }
+  for (uint8_t i = 0; i < RHYTHM_NOTE_COUNT; i++) {
+    if (!rhythmNoteActive[i]) continue;
+    int noteX = rhythmNoteLane[i] * 8 + 2;
+    for (uint8_t ox = 0; ox < 4; ox++) {
+      drawPixelMapped(noteX + ox, rhythmNoteY[i], laneColors[rhythmNoteLane[i]]);
+      drawPixelMapped(noteX + ox, rhythmNoteY[i] + 1, laneColors[rhythmNoteLane[i]]);
+    }
+  }
+  if (rhythmFlashFrames > 0 && rhythmFlashLane < 4) {
+    uint16_t flashColor = rhythmHitSuccess ? WHITE : RED;
+    int flashX = rhythmFlashLane * 8 + 1;
+    for (uint8_t x = 0; x < 6; x++) {
+      drawPixelMapped(flashX + x, 13, flashColor);
+      drawPixelMapped(flashX + x, 14, flashColor);
+    }
+  }
+  uint8_t meter = min((uint16_t)8, rhythmCombo);
+  for (uint8_t i = 0; i < meter; i++) drawPixelMapped(12 + i, 0, YELLOW);
 }
 
 void drawSphereFrame(uint32_t t) {
@@ -3334,6 +3778,12 @@ void printHelp() {
   Serial.println("  beatburst    -> run particle explosions on beats");
   Serial.println("  sunrise      -> run a sunrise over silhouettes");
   Serial.println("  pacman       -> run a Pac-Man style chase loop");
+  Serial.println("  flappy       -> play Flappy Bird; any input jumps, c returns here");
+  Serial.println("  pong         -> watch neon auto-Pong; c returns here");
+  Serial.println("  breakout [1-10] -> play Breakout at the selected speed");
+  Serial.println("  snake        -> play Snake; w/a/s/d move, c returns here");
+  Serial.println("  invaders     -> play Invaders; a/d move, other keys fire, c exits");
+  Serial.println("  rhythm [1-10] -> play four lanes at the selected speed");
   Serial.println("  sphere       -> run a fake 3D particle sphere");
   Serial.println("  parallax     -> run a parallax starfield");
   Serial.println("  moire        -> run moire-like shifting lines");
@@ -3812,6 +4262,68 @@ void handleCommand(String input) {
     return;
   }
 
+  if (input == "flappy") {
+    resetFlappyGame();
+    currentMode = MODE_FLAPPY;
+    Serial.println("Flappy Bird started. Send anything to jump; send 'c' to return to the menu.");
+    return;
+  }
+
+  if (input == "pong") {
+    resetPongGame();
+    currentMode = MODE_PONG;
+    Serial.println("Neon auto-Pong started. Send 'c' to return to the menu.");
+    return;
+  }
+
+  if (input == "breakout" || input.startsWith("breakout ")) {
+    uint8_t requestedSpeed = 5;
+    if (input.length() > 8) {
+      int parsedSpeed = input.substring(9).toInt();
+      if (parsedSpeed < 1 || parsedSpeed > 10) {
+        Serial.println("Invalid Breakout speed. Use: breakout <1-10>");
+        return;
+      }
+      requestedSpeed = parsedSpeed;
+    }
+    breakoutSpeed = requestedSpeed;
+    resetBreakoutGame();
+    currentMode = MODE_BREAKOUT;
+    Serial.printf("Breakout started at speed %u. Use a/d to move; c returns to the menu.\n", breakoutSpeed);
+    return;
+  }
+
+  if (input == "snake") {
+    resetSnakeGame();
+    currentMode = MODE_SNAKE;
+    Serial.println("Snake started. Send w/a/s/d to steer; 'c' returns to the menu.");
+    return;
+  }
+
+  if (input == "invaders") {
+    resetInvadersGame();
+    currentMode = MODE_INVADERS;
+    Serial.println("Invaders started. Send a/d to move, any other key to fire, or c to exit.");
+    return;
+  }
+
+  if (input == "rhythm" || input.startsWith("rhythm ")) {
+    uint8_t requestedSpeed = 5;
+    if (input.length() > 6) {
+      int parsedSpeed = input.substring(7).toInt();
+      if (parsedSpeed < 1 || parsedSpeed > 10) {
+        Serial.println("Invalid rhythm speed. Use: rhythm <1-10>");
+        return;
+      }
+      requestedSpeed = parsedSpeed;
+    }
+    rhythmSpeed = requestedSpeed;
+    resetRhythmGame();
+    currentMode = MODE_RHYTHM;
+    Serial.printf("Rhythm game started at speed %u. Use a/s/k/l to hit notes; c exits.\n", rhythmSpeed);
+    return;
+  }
+
   if (input == "sphere") {
     currentMode = MODE_SPHERE;
     Serial.println("Sphere effect started. Send 'stop' to return to command mode.");
@@ -4198,11 +4710,55 @@ void testPixelSweepSingle(uint16_t delayMs) {
   matrix->fillScreen(BLACK);
 }
  
+bool isGameMode() {
+  return currentMode == MODE_FLAPPY || currentMode == MODE_PONG || currentMode == MODE_BREAKOUT ||
+         currentMode == MODE_SNAKE || currentMode == MODE_INVADERS || currentMode == MODE_RHYTHM;
+}
+
+void handleGameKey(char key) {
+  if (key == '\r' || key == '\n') return;
+  if (key >= 'A' && key <= 'Z') key += 'a' - 'A';
+  if (!isGameMode()) return;
+
+  if (key == 'c') {
+      currentMode = MODE_HELP;
+      matrix->fillScreen(BLACK);
+      Serial.println("Game closed.");
+      printHelp();
+      return;
+  }
+
+  if (currentMode == MODE_FLAPPY) {
+    flapBird();
+  } else if (currentMode == MODE_BREAKOUT) {
+    if (key == 'a') moveBreakoutPaddle(-1);
+    if (key == 'd') moveBreakoutPaddle(1);
+  } else if (currentMode == MODE_SNAKE) {
+    if (key == 'w') steerSnake(0, -1);
+    if (key == 'a') steerSnake(-1, 0);
+    if (key == 's') steerSnake(0, 1);
+    if (key == 'd') steerSnake(1, 0);
+  } else if (currentMode == MODE_INVADERS) {
+    if (key == 'a') controlInvaders(-1, false);
+    else if (key == 'd') controlInvaders(1, false);
+    else controlInvaders(0, true);
+  } else if (currentMode == MODE_RHYTHM) {
+    if (key == 'a') hitRhythmLane(0);
+    if (key == 's') hitRhythmLane(1);
+    if (key == 'k') hitRhythmLane(2);
+    if (key == 'l') hitRhythmLane(3);
+  }
+}
+
 void loop() {
   if (Serial.available()) {
-    String input = Serial.readStringUntil('\n');
-    clearSerialInput();
-    handleCommand(input);
+    if (isGameMode()) {
+      while (Serial.available()) handleGameKey((char)Serial.read());
+    } else {
+      String input = Serial.readStringUntil('\n');
+      clearSerialInput();
+      handleCommand(input);
+    }
   }
 
   if (currentMode == MODE_AURORA) {
@@ -4383,6 +4939,36 @@ void loop() {
   if (currentMode == MODE_PACMAN) {
     drawPacmanFrame(millis());
     delay(70);
+  }
+
+  if (currentMode == MODE_FLAPPY) {
+    drawFlappyFrame(millis());
+    delay(10);
+  }
+
+  if (currentMode == MODE_PONG) {
+    drawPongFrame(millis());
+    delay(10);
+  }
+
+  if (currentMode == MODE_BREAKOUT) {
+    drawBreakoutFrame(millis());
+    delay(10);
+  }
+
+  if (currentMode == MODE_SNAKE) {
+    drawSnakeFrame(millis());
+    delay(10);
+  }
+
+  if (currentMode == MODE_INVADERS) {
+    drawInvadersFrame(millis());
+    delay(10);
+  }
+
+  if (currentMode == MODE_RHYTHM) {
+    drawRhythmFrame(millis());
+    delay(10);
   }
 
   if (currentMode == MODE_SPHERE) {

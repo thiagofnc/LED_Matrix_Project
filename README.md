@@ -150,6 +150,8 @@ Open the Serial Monitor at:
 
 - `115200`
 
+Menu commands are submitted as full lines. Once a game starts, the sketch reads each serial byte immediately. Use a raw serial terminal such as PuTTY or Tera Term for one-key controls; Arduino IDE's Serial Monitor still buffers typed input until Enter is pressed.
+
 ### Diagnostic Commands
 
 - `h`
@@ -307,6 +309,12 @@ What they do:
 - `beatburst` runs particle explosions on beats
 - `sunrise` runs a sunrise gradient over silhouettes
 - `pacman` runs Pac-Man and three spaced ghosts through a pellet-filled maze; eaten pellets remain cleared until the round resets
+- `flappy` starts Flappy Bird; send any Serial Monitor input to jump, or send `c` to exit back to the command menu
+- `pong` runs neon auto-Pong; send `c` to return to the command menu
+- `breakout [1-10]` starts playable Breakout at the selected speed (default `5`); send `a` or `d` to move the paddle and `c` to return to the command menu
+- `snake` starts playable Snake; steer with `w`, `a`, `s`, and `d`, or send `c` to exit
+- `invaders` starts playable Space Invaders; use `a`/`d` to move, any other input to fire, and `c` to exit
+- `rhythm [1-10]` starts a four-lane Guitar Hero-style game at the selected speed (default `5`); hit falling notes with `a`, `s`, `k`, and `l`, or send `c` to exit
 - `sphere` runs a fake 3D sphere made of particles
 - `parallax` runs a parallax starfield
 - `moire` runs moire-like shifting lines
