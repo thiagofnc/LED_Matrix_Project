@@ -315,13 +315,15 @@ What they do:
 - `beatburst` runs particle explosions on beats
 - `sunrise` runs a sunrise gradient over silhouettes
 - `pacman` runs Pac-Man and three spaced ghosts through a pellet-filled maze; eaten pellets remain cleared until the round resets
+- `dino` starts an infinite Chrome-style dinosaur runner with randomized cacti and increasing speed; send any input to jump, any input after a crash to restart, or `c` to exit
+- `dinoclock` runs a non-playable infinite Dino scene that automatically jumps over cacti beneath a live clock
 - `flappy` starts Flappy Bird; send any Serial Monitor input to jump, or send `c` to exit back to the command menu
 - `pong` runs neon auto-Pong around a compact live clock centered on the court; send `c` to return to the command menu
 - `breakout [1-10]` starts playable Breakout at the selected speed (default `5`); send `a` or `d` to move the paddle and `c` to return to the command menu
 - `snake` starts playable Snake; steer with `w`, `a`, `s`, and `d`, or send `c` to exit
 - `invaders` starts playable Space Invaders; use `a`/`d` to move, any other input to fire, and `c` to exit
-- `rhythm [1-10]` starts a four-lane Guitar Hero-style game at the selected speed (default `5`); hit falling notes with `a`, `s`, `k`, and `l`, or send `c` to exit
-- `sphere` runs a fake 3D sphere made of particles
+- `rhythm [1-15]` starts a four-lane Guitar Hero-style game at the selected speed (default `5`); hit falling notes with `a`, `s`, `k`, and `l`, or send `c` to exit
+- `sphere` runs a hypnotic shaded energy orb with a halo and orbiting light
 - `parallax` runs a parallax starfield
 - `moire` runs moire-like shifting lines
 - `hypnosis` runs pulsing, wandering concentric rings

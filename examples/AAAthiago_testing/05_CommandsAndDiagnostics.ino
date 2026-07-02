@@ -55,13 +55,15 @@ void printHelp() {
   Serial.println("  beatburst    -> run particle explosions on beats");
   Serial.println("  sunrise      -> run a sunrise over silhouettes");
   Serial.println("  pacman       -> run a Pac-Man style chase loop");
+  Serial.println("  dino         -> play infinite Dino runner; any input jumps, c exits");
+  Serial.println("  dinoclock    -> watch an infinite auto-jumping Dino with a clock");
   Serial.println("  flappy       -> play Flappy Bird; any input jumps, c returns here");
   Serial.println("  pong         -> watch neon auto-Pong; c returns here");
   Serial.println("  breakout [1-10] -> play Breakout at the selected speed");
   Serial.println("  snake        -> play Snake; w/a/s/d move, c returns here");
   Serial.println("  invaders     -> play Invaders; a/d move, other keys fire, c exits");
-  Serial.println("  rhythm [1-10] -> play four lanes at the selected speed");
-  Serial.println("  sphere       -> run a fake 3D particle sphere");
+  Serial.println("  rhythm [1-15] -> play four lanes at the selected speed");
+  Serial.println("  sphere       -> run a hypnotic shaded energy orb");
   Serial.println("  parallax     -> run a parallax starfield");
   Serial.println("  moire        -> run moire-like shifting lines");
   Serial.println("  hypnosis     -> run pulsing hypnotic rings");
@@ -578,6 +580,19 @@ void handleCommand(String input) {
     return;
   }
 
+  if (input == "dino") {
+    currentMode = MODE_DINO;
+    resetDinoGame();
+    Serial.println("Infinite Dino started. Any key jumps; after a crash, any key restarts; c exits.");
+    return;
+  }
+
+  if (input == "dinoclock") {
+    currentMode = MODE_DINO_CLOCK;
+    Serial.println("Dino clock started. Send 'stop' to return to command mode.");
+    return;
+  }
+
   if (input == "flappy") {
     resetFlappyGame();
     currentMode = MODE_FLAPPY;
@@ -627,8 +642,8 @@ void handleCommand(String input) {
     uint8_t requestedSpeed = 5;
     if (input.length() > 6) {
       int parsedSpeed = input.substring(7).toInt();
-      if (parsedSpeed < 1 || parsedSpeed > 10) {
-        Serial.println("Invalid rhythm speed. Use: rhythm <1-10>");
+      if (parsedSpeed < 1 || parsedSpeed > 15) {
+        Serial.println("Invalid rhythm speed. Use: rhythm <1-15>");
         return;
       }
       requestedSpeed = parsedSpeed;

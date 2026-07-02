@@ -1,4 +1,108 @@
 // Pac-Man and interactive game implementations.
+
+void resetDinoGame() {
+  dinoY = 10.0f;
+  dinoVelocity = 0.0f;
+  dinoObstacleX[0] = 34.0f;
+  dinoObstacleX[1] = 49.0f;
+  dinoObstacleX[2] = 66.0f;
+  for (uint8_t i = 0; i < 3; i++) {
+    dinoObstacleHeight[i] = random(3, 6);
+    dinoObstaclePassed[i] = false;
+  }
+  dinoScore = 0;
+  dinoDistance = 0;
+  dinoGameOver = false;
+  dinoLastFrame = millis();
+}
+
+void jumpDino() {
+  if (dinoGameOver) {
+    resetDinoGame();
+    return;
+  }
+  if (dinoY >= 9.8f) dinoVelocity = -1.55f;
+}
+
+void drawDinoSprite(int x, int y, bool running) {
+  uint16_t body = matrix->color565(230, 230, 230);
+  // Seven pixels wide by five high: tail, body, long neck, head and two legs.
+  drawPixelMapped(x + 3, y, body);
+  drawPixelMapped(x + 4, y, body);
+  drawPixelMapped(x + 5, y, body);
+  drawPixelMapped(x + 6, y, body);
+  drawPixelMapped(x + 3, y + 1, body);
+  drawPixelMapped(x + 4, y + 1, body);
+  drawPixelMapped(x + 5, y + 1, body);
+  drawPixelMapped(x + 6, y + 1, body);
+  drawPixelMapped(x + 1, y + 2, body);
+  drawPixelMapped(x + 2, y + 2, body);
+  drawPixelMapped(x + 3, y + 2, body);
+  drawPixelMapped(x + 4, y + 2, body);
+  drawPixelMapped(x, y + 3, body);
+  drawPixelMapped(x + 1, y + 3, body);
+  drawPixelMapped(x + 2, y + 3, body);
+  drawPixelMapped(x + 3, y + 3, body);
+  drawPixelMapped(x + 1, y + 4, body);
+  drawPixelMapped(x + (running ? 3 : 2), y + 4, body);
+  drawPixelMapped(x + 5, y, BLACK); // eye
+}
+
+void drawDinoFrame(uint32_t t) {
+  if (t - dinoLastFrame < 55) return;
+  dinoLastFrame = t;
+
+  const float groundY = 15.0f;
+  if (!dinoGameOver) {
+    dinoVelocity += 0.15f;
+    dinoY += dinoVelocity;
+    if (dinoY >= 10.0f) {
+      dinoY = 10.0f;
+      dinoVelocity = 0.0f;
+    }
+
+    float speed = 0.48f + min(0.42f, dinoDistance / 2200.0f);
+    float rightmost = dinoObstacleX[0];
+    for (uint8_t i = 1; i < 3; i++) rightmost = max(rightmost, dinoObstacleX[i]);
+    for (uint8_t i = 0; i < 3; i++) {
+      dinoObstacleX[i] -= speed;
+      if (dinoObstacleX[i] < -2.0f) {
+        dinoObstacleX[i] = rightmost + random(16, 24);
+        rightmost = dinoObstacleX[i];
+        dinoObstacleHeight[i] = random(3, 6);
+        dinoObstaclePassed[i] = false;
+      }
+      int ox = (int)dinoObstacleX[i];
+      if (!dinoObstaclePassed[i] && ox + 1 < 4) {
+        dinoObstaclePassed[i] = true;
+        dinoScore++;
+      }
+      int dinoBottom = (int)dinoY + 4;
+      int cactusTop = (int)groundY - dinoObstacleHeight[i] + 1;
+      // Use the dinosaur's solid torso for collision; the tail and snout are visual detail.
+      if (ox <= 9 && ox + 1 >= 5 && dinoBottom >= cactusTop) dinoGameOver = true;
+    }
+    dinoDistance++;
+  }
+
+  matrix->fillScreen(BLACK);
+  uint16_t ground = matrix->color565(120, 120, 120);
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    if (((x + dinoDistance / 2) % 5) != 0) drawPixelMapped(x, (int)groundY, ground);
+  }
+  for (uint8_t i = 0; i < 3; i++) {
+    int ox = (int)dinoObstacleX[i];
+    for (uint8_t h = 0; h < dinoObstacleHeight[i]; h++) drawPixelMapped(ox, (int)groundY - h, GREEN);
+    drawPixelMapped(ox - 1, (int)groundY - 1, GREEN);
+    drawPixelMapped(ox + 1, (int)groundY - 2, GREEN);
+  }
+  drawDinoSprite(4, (int)dinoY, ((dinoDistance / 3) & 1) != 0);
+
+  uint8_t shownScore = min((uint16_t)99, dinoScore);
+  if (shownScore >= 10) drawWallpaperDigit(24, 0, '0' + shownScore / 10, YELLOW);
+  drawWallpaperDigit(28, 0, '0' + shownScore % 10, YELLOW);
+  if (dinoGameOver) drawMappedText(9, 4, "HIT", RED);
+}
 void getPacmanRoutePoint(uint8_t index, int& x, int& y, uint8_t& direction) {
   index %= PACMAN_ROUTE_LENGTH;
   if (index < 26) {

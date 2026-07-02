@@ -39,6 +39,17 @@ void drawWallpaperClock(uint32_t t, uint16_t color) {
   }
 }
 
+void drawLargeWallpaperClock(uint16_t color) {
+  String value = getCurrentClockText();
+
+  // Outline the full-size 5x7 clock so it remains readable over bright motion.
+  drawMappedText(1, 4, value, BLACK);
+  drawMappedText(3, 4, value, BLACK);
+  drawMappedText(2, 3, value, BLACK);
+  drawMappedText(2, 5, value, BLACK);
+  drawMappedText(2, 4, value, color);
+}
+
 void drawRainClockFrame(uint32_t t) {
   matrix->fillScreen(matrix->color565(0, 2, 8));
   uint8_t step = t / 90;
@@ -136,4 +147,43 @@ void drawOrbitClockFrame(uint32_t t) {
     drawPixelMapped(x, y, colorWheel(i * 21 + t / 18));
   }
   drawWallpaperClock(t, WHITE);
+}
+
+void drawDinoClockFrame(uint32_t t) {
+  matrix->fillScreen(matrix->color565(2, 5, 8));
+  const int groundY = 15;
+  float travel = t / 110.0f;
+  float nearest = 99.0f;
+
+  for (uint8_t i = 0; i < 3; i++) {
+    float wrapped = fmodf(travel + i * 17.0f, 51.0f);
+    int cactusX = 35 - (int)wrapped;
+    uint8_t height = 2 + clockWallpaperHash(i, 7, 43) % 3;
+    if (cactusX >= 4 && cactusX < nearest) nearest = cactusX;
+    for (uint8_t h = 0; h < height; h++) drawPixelMapped(cactusX, groundY - h, GREEN);
+    drawPixelMapped(cactusX - 1, groundY - 1, GREEN);
+  }
+
+  int jump = 0;
+  if (nearest >= 5 && nearest <= 14) {
+    float phase = (14.0f - nearest) / 9.0f;
+    jump = (int)(sinf(phase * 3.14159f) * 6.0f);
+  }
+  drawDinoSprite(4, 10 - jump, ((uint32_t)travel & 1) != 0);
+
+  uint16_t ground = matrix->color565(115, 115, 115);
+  for (int x = 0; x < PANEL_RES_X; x++) {
+    if (((x + (int)travel) % 5) != 0) drawPixelMapped(x, groundY, ground);
+  }
+
+  String value = getCurrentClockText();
+  uint16_t clockColor = matrix->color565(230, 230, 230);
+  drawWallpaperDigit(7, 0, value[0], clockColor);
+  drawWallpaperDigit(11, 0, value[1], clockColor);
+  drawWallpaperDigit(18, 0, value[3], clockColor);
+  drawWallpaperDigit(22, 0, value[4], clockColor);
+  if ((t / 500) & 1) {
+    drawPixelMapped(16, 1, clockColor);
+    drawPixelMapped(16, 3, clockColor);
+  }
 }

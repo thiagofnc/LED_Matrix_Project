@@ -25,7 +25,7 @@ void drawSilkFrame(uint32_t t) {
 
 void drawSilkClockFrame(uint32_t t) {
   drawSilkFrame(t);
-  drawWallpaperClock(t, WHITE);
+  drawLargeWallpaperClock(WHITE);
 }
 
 void drawDeepSeaFrame(uint32_t t) {
@@ -55,5 +55,5 @@ void drawDeepSeaFrame(uint32_t t) {
     uint16_t plant = scaleColor565(colorWheel((uint8_t)(105 + x * 3 + t / 100)), 125);
     drawLineMapped(x, PANEL_RES_Y - 1, x + (int)sinf(time + x), tip, plant);
   }
-  drawWallpaperClock(t, matrix->color565(180, 255, 255));
+  drawLargeWallpaperClock(matrix->color565(180, 255, 255));
 }

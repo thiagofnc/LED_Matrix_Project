@@ -78,6 +78,7 @@ enum TestMode {
   MODE_MATRIX_CLOCK,
   MODE_TETRIS_CLOCK,
   MODE_ORBIT_CLOCK,
+  MODE_DINO_CLOCK,
   MODE_SUPERNOVA,
   MODE_VORTEX,
   MODE_LAVA,
@@ -103,6 +104,7 @@ enum TestMode {
   MODE_BEATBURST,
   MODE_SUNRISE,
   MODE_PACMAN,
+  MODE_DINO,
   MODE_FLAPPY,
   MODE_PONG,
   MODE_BREAKOUT,
@@ -162,6 +164,15 @@ bool pacmanPellets[PACMAN_ROUTE_LENGTH];
 uint8_t pacmanRouteIndex = 0;
 uint32_t pacmanLastStep = 0;
 uint32_t pacmanRoundCompleteAt = 0;
+float dinoY = 10.0f;
+float dinoVelocity = 0.0f;
+float dinoObstacleX[3] = {34.0f, 49.0f, 66.0f};
+uint8_t dinoObstacleHeight[3] = {3, 4, 3};
+bool dinoObstaclePassed[3] = {false, false, false};
+uint16_t dinoScore = 0;
+uint32_t dinoDistance = 0;
+uint32_t dinoLastFrame = 0;
+bool dinoGameOver = false;
 float flappyY = 7.0f;
 float flappyVelocity = 0.0f;
 float flappyPipeX[2] = {24.0f, 42.0f};
@@ -430,7 +441,7 @@ void testPixelSweepSingle(uint16_t delayMs) {
 }
  
 bool isGameMode() {
-  return currentMode == MODE_FLAPPY || currentMode == MODE_PONG || currentMode == MODE_BREAKOUT ||
+  return currentMode == MODE_DINO || currentMode == MODE_FLAPPY || currentMode == MODE_PONG || currentMode == MODE_BREAKOUT ||
          currentMode == MODE_SNAKE || currentMode == MODE_INVADERS || currentMode == MODE_RHYTHM;
 }
 
@@ -447,7 +458,9 @@ void handleGameKey(char key) {
       return;
   }
 
-  if (currentMode == MODE_FLAPPY) {
+  if (currentMode == MODE_DINO) {
+    jumpDino();
+  } else if (currentMode == MODE_FLAPPY) {
     flapBird();
   } else if (currentMode == MODE_BREAKOUT) {
     if (key == 'a') moveBreakoutPaddle(-1);
@@ -542,6 +555,11 @@ void loop() {
 
   if (currentMode == MODE_ORBIT_CLOCK) {
     drawOrbitClockFrame(millis());
+    delay(35);
+  }
+
+  if (currentMode == MODE_DINO_CLOCK) {
+    drawDinoClockFrame(millis());
     delay(35);
   }
 
@@ -688,6 +706,11 @@ void loop() {
   if (currentMode == MODE_PACMAN) {
     drawPacmanFrame(millis());
     delay(70);
+  }
+
+  if (currentMode == MODE_DINO) {
+    drawDinoFrame(millis());
+    delay(10);
   }
 
   if (currentMode == MODE_FLAPPY) {

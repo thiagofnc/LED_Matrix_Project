@@ -1,19 +1,96 @@
 // Geometric, optical, television, audio, and character effects.
-void drawSphereFrame(uint32_t t) {
-  matrix->fillScreen(BLACK);
-  for (int i = 0; i < 64; i++) {
-    float phi = (i / 64.0f) * 6.2831853f * 2.0f;
-    float theta = acosf(1.0f - 2.0f * ((i + 0.5f) / 64.0f));
-    float x = sinf(theta) * cosf(phi + t * 0.0018f);
-    float y = cosf(theta);
-    float z = sinf(theta) * sinf(phi + t * 0.0018f);
-    float rx = x * cosf(t * 0.0011f) - z * sinf(t * 0.0011f);
-    float rz = x * sinf(t * 0.0011f) + z * cosf(t * 0.0011f) + 2.4f;
-    int px = (int)(16 + rx * 9.0f / rz + 0.5f);
-    int py = (int)(8 + y * 8.0f / rz + 0.5f);
-    uint16_t color = colorWheel((uint8_t)(i * 4 + t / 8));
-    drawPixelMapped(px, py, color);
+void drawSphereOrbitLayer(uint32_t t, float cx, float cy, float radius, bool front) {
+  float orbit = t * 0.00155f;
+  uint16_t orbitColor = colorWheel((uint8_t)(t / 22 + 92));
+
+  for (uint8_t i = 0; i < 48; i++) {
+    float angle = i * 0.1308997f + orbit;
+    float depth = sinf(angle);
+    if ((depth >= 0.0f) != front) continue;
+
+    float px = cx + cosf(angle) * (radius + 2.0f);
+    float py = cy + sinf(angle) * 2.25f + cosf(angle) * 0.55f;
+    uint8_t brightness = (uint8_t)(front ? 135.0f + depth * 120.0f
+                                        : 28.0f + (depth + 1.0f) * 42.0f);
+    drawPixelMapped((int)(px + 0.5f), (int)(py + 0.5f),
+                    scaleColor565(orbitColor, brightness));
   }
+}
+
+void drawSphereFrame(uint32_t t) {
+  float seconds = t * 0.001f;
+  float cx = 15.5f + sinf(seconds * 0.37f) * 0.75f;
+  float cy = 7.5f + cosf(seconds * 0.43f) * 0.35f;
+  float radius = 5.85f + sinf(seconds * 1.05f) * 0.42f;
+  float spin = seconds * 1.18f;
+  float tilt = sinf(seconds * 0.31f) * 0.62f;
+
+  // A deep, subtly moving star field gives the orb scale without stealing focus.
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      uint16_t hash = (uint16_t)(x * 73 + y * 151 + x * y * 17);
+      float dx = x - cx;
+      float dy = y - cy;
+      float distance = sqrtf(dx * dx + dy * dy);
+      float halo = fmaxf(0.0f, 1.0f - fabsf(distance - radius) / 3.0f);
+      uint8_t blue = (uint8_t)(2.0f + halo * halo * 25.0f);
+      uint16_t background = matrix->color565(blue / 5, blue / 3, blue);
+
+      if ((hash % 41) == 0) {
+        float twinkle = 0.5f + 0.5f * sinf(seconds * (1.6f + (hash & 3) * 0.31f) + hash);
+        background = scaleColor565(colorWheel((uint8_t)(hash + t / 45)),
+                                   (uint8_t)(30.0f + twinkle * 105.0f));
+      }
+      drawPixelMapped(x, y, background);
+    }
+  }
+
+  // Draw the far half of the energy ring first so the globe properly occludes it.
+  drawSphereOrbitLayer(t, cx, cy, radius, false);
+
+  float lightX = -0.48f + sinf(seconds * 0.53f) * 0.18f;
+  float lightY = -0.48f + cosf(seconds * 0.41f) * 0.14f;
+  float lightZ = sqrtf(fmaxf(0.0f, 1.0f - lightX * lightX - lightY * lightY));
+  float ct = cosf(tilt);
+  float st = sinf(tilt);
+
+  for (int y = 0; y < PANEL_RES_Y; y++) {
+    for (int x = 0; x < PANEL_RES_X; x++) {
+      float nx = (x - cx) / radius;
+      float ny = (y - cy) / radius;
+      float rr = nx * nx + ny * ny;
+      if (rr > 1.0f) continue;
+
+      float nz = sqrtf(1.0f - rr);
+      float surfaceY = ny * ct - nz * st;
+      float surfaceZ = ny * st + nz * ct;
+      float longitude = atan2f(nx, surfaceZ) + spin;
+      float latitude = asinf(fmaxf(-1.0f, fminf(1.0f, surfaceY)));
+
+      // Two counter-moving waves make the texture continuously fold through itself.
+      float ribbons = sinf(longitude * 5.0f + latitude * 3.0f + seconds * 1.35f);
+      float filaments = sinf(longitude * 9.0f - latitude * 7.0f - seconds * 0.82f);
+      float energy = 0.5f + 0.32f * ribbons + 0.18f * filaments;
+      float diffuse = fmaxf(0.0f, nx * lightX + ny * lightY + nz * lightZ);
+      float specular = powf(fmaxf(0.0f, nx * lightX + ny * lightY + nz * lightZ), 10.0f);
+      float rim = powf(1.0f - nz, 1.7f);
+
+      uint8_t hue = (uint8_t)(t / 28 + longitude * 25.0f + latitude * 34.0f + energy * 52.0f);
+      float level = 38.0f + diffuse * 128.0f + energy * 48.0f + rim * 75.0f;
+      uint8_t brightness = (uint8_t)fmaxf(22.0f, fminf(255.0f, level));
+      uint16_t color = specular > 0.36f
+                         ? matrix->color565(255, 245, 230)
+                         : scaleColor565(colorWheel(hue), brightness);
+      drawPixelMapped(x, y, color);
+    }
+  }
+
+  // The near arc and traveling pearl sell the depth and keep the eye circling.
+  drawSphereOrbitLayer(t, cx, cy, radius, true);
+  float pearlAngle = seconds * 1.55f;
+  int pearlX = (int)(cx + cosf(pearlAngle) * (radius + 2.0f) + 0.5f);
+  int pearlY = (int)(cy + sinf(pearlAngle) * 2.25f + cosf(pearlAngle) * 0.55f + 0.5f);
+  if (sinf(pearlAngle) >= 0.0f) drawPixelMapped(pearlX, pearlY, WHITE);
 }
 
 void drawParallaxFrame(uint32_t t) {
